@@ -81,6 +81,7 @@ def _params_to_dict(params: AxisSectionParams) -> Dict[str, Any]:
         "ramp_start": params.ramp_start,
         "ramp_end": params.ramp_end,
         "constant_value": params.constant_value,
+        "multisine_components": params.multisine_components,
     }
 
 
@@ -96,6 +97,10 @@ def _params_from_dict(data: Mapping[str, Any], prefix: str) -> AxisSectionParams
         ramp_start=_as_float(f"{prefix}.ramp_start", data.get("ramp_start")),
         ramp_end=_as_float(f"{prefix}.ramp_end", data.get("ramp_end")),
         constant_value=_as_float(f"{prefix}.constant_value", data.get("constant_value")),
+        multisine_components=_as_str(
+            f"{prefix}.multisine_components",
+            data.get("multisine_components", AxisSectionParams().multisine_components),
+        ),
     )
 
 

@@ -154,6 +154,7 @@ class AxisEditorMixin:
         ui["sweep_end_var"].set(f"{params.sweep_end_hz:.6f}")
         ui["ramp_start_var"].set(f"{params.ramp_start:.6f}")
         ui["ramp_end_var"].set(f"{params.ramp_end:.6f}")
+        ui["multisine_components_var"].set(str(params.multisine_components))
         self._suspend_events = False
 
         self._update_axis_editor_visibility(axis)
@@ -191,6 +192,7 @@ class AxisEditorMixin:
             MODE_RAMP: {"ramp_start", "ramp_end"},
             MODE_SINE: {"amplitude", "offset", "phase_deg", "frequency_hz"},
             MODE_SWEEP: {"amplitude", "offset", "phase_deg", "sweep_start_hz", "sweep_end_hz"},
+            MODE_MULTISINE: {"offset", "multisine_components"},
         }
         visible = visible_by_mode.get(mode, set())
 
@@ -212,7 +214,7 @@ class AxisEditorMixin:
                 lock_field = "constant_value"
             elif mode == MODE_RAMP:
                 lock_field = "ramp_start"
-            elif mode in (MODE_SINE, MODE_SWEEP):
+            elif mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
                 lock_field = "offset"
 
         for key, meta in rows.items():
@@ -262,25 +264,41 @@ class AxisEditorMixin:
             raise ValueError(f"{axis_label}: duration must be > 0.")
 
         mode = str(ui["mode_var"].get()).strip().lower()
-        params = AxisSectionParams(
-            mode=mode,
-            constant_value=self._parse_float(f"{axis_label} constant value", ui["constant_var"].get()),
-            amplitude=self._parse_float(f"{axis_label} amplitude", ui["amplitude_var"].get()),
-            offset=self._parse_float(f"{axis_label} offset", ui["offset_var"].get()),
-            phase_deg=self._parse_float(f"{axis_label} phase", ui["phase_var"].get()),
-            frequency_hz=self._parse_float(f"{axis_label} frequency", ui["frequency_var"].get()),
-            sweep_start_hz=self._parse_float(f"{axis_label} sweep start", ui["sweep_start_var"].get()),
-            sweep_end_hz=self._parse_float(f"{axis_label} sweep end", ui["sweep_end_var"].get()),
-            ramp_start=self._parse_float(f"{axis_label} ramp start", ui["ramp_start_var"].get()),
-            ramp_end=self._parse_float(f"{axis_label} ramp end", ui["ramp_end_var"].get()),
-        )
-
-        if params.amplitude < 0:
-            raise ValueError(f"{axis_label}: amplitude cannot be negative.")
-        if params.frequency_hz < 0:
-            raise ValueError(f"{axis_label}: frequency cannot be negative.")
-        if params.sweep_start_hz < 0 or params.sweep_end_hz < 0:
-            raise ValueError(f"{axis_label}: sweep frequencies cannot be negative.")
+        params = AxisSectionParams(mode=mode)
+        if mode == MODE_CONSTANT:
+            params.constant_value = self._parse_float(f"{axis_label} constant value", ui["constant_var"].get())
+        elif mode == MODE_RAMP:
+            params.ramp_start = self._parse_float(f"{axis_label} ramp start", ui["ramp_start_var"].get())
+            params.ramp_end = self._parse_float(f"{axis_label} ramp end", ui["ramp_end_var"].get())
+        elif mode == MODE_SINE:
+            params.amplitude = self._parse_float(f"{axis_label} amplitude", ui["amplitude_var"].get())
+            params.offset = self._parse_float(f"{axis_label} offset", ui["offset_var"].get())
+            params.phase_deg = self._parse_float(f"{axis_label} phase", ui["phase_var"].get())
+            params.frequency_hz = self._parse_float(f"{axis_label} frequency", ui["frequency_var"].get())
+            if params.amplitude < 0:
+                raise ValueError(f"{axis_label}: amplitude cannot be negative.")
+            if params.frequency_hz < 0:
+                raise ValueError(f"{axis_label}: frequency cannot be negative.")
+        elif mode == MODE_SWEEP:
+            params.amplitude = self._parse_float(f"{axis_label} amplitude", ui["amplitude_var"].get())
+            params.offset = self._parse_float(f"{axis_label} offset", ui["offset_var"].get())
+            params.phase_deg = self._parse_float(f"{axis_label} phase", ui["phase_var"].get())
+            params.sweep_start_hz = self._parse_float(f"{axis_label} sweep start", ui["sweep_start_var"].get())
+            params.sweep_end_hz = self._parse_float(f"{axis_label} sweep end", ui["sweep_end_var"].get())
+            if params.amplitude < 0:
+                raise ValueError(f"{axis_label}: amplitude cannot be negative.")
+            if params.sweep_start_hz < 0 or params.sweep_end_hz < 0:
+                raise ValueError(f"{axis_label}: sweep frequencies cannot be negative.")
+        elif mode == MODE_MULTISINE:
+            params.offset = self._parse_float(f"{axis_label} offset", ui["offset_var"].get())
+            params.multisine_components = str(ui["multisine_components_var"].get()).strip()
+            if not params.multisine_components:
+                raise ValueError(
+                    f"{axis_label}: multisine components cannot be empty "
+                    "(format: amplitude,frequency_hz,phase_deg; ...)."
+                )
+        else:
+            raise ValueError(f"{axis_label}: invalid mode '{mode}'.")
 
         return AxisMotionSection(duration_s=duration_s, params=params)
 
@@ -357,7 +375,7 @@ class AxisEditorMixin:
             ui["constant_var"].set(f"{params.constant_value:.6f}")
         elif params.mode == MODE_RAMP:
             ui["ramp_start_var"].set(f"{params.ramp_start:.6f}")
-        elif params.mode in (MODE_SINE, MODE_SWEEP):
+        elif params.mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
             ui["offset_var"].set(f"{params.offset:.6f}")
         self._suspend_events = False
 

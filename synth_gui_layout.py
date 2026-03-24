@@ -374,6 +374,7 @@ class LayoutMixin:
         sweep_end_var = tk.StringVar(value="5.0")
         ramp_start_var = tk.StringVar(value="0.0")
         ramp_end_var = tk.StringVar(value="0.01")
+        multisine_components_var = tk.StringVar(value="0.01,1.0,0.0; 0.005,3.0,90.0")
 
         duration_row = ttk.Frame(section_editor)
         duration_row.grid(row=0, column=0, sticky="ew", pady=1)
@@ -397,7 +398,7 @@ class LayoutMixin:
         mode_combo = ttk.Combobox(
             mode_row,
             state="readonly",
-            values=[MODE_SINE, MODE_SWEEP, MODE_RAMP, MODE_CONSTANT],
+            values=[MODE_SINE, MODE_SWEEP, MODE_RAMP, MODE_CONSTANT, MODE_MULTISINE],
             textvariable=mode_var,
             width=12,
         )
@@ -414,13 +415,14 @@ class LayoutMixin:
             slider_var: Optional[tk.DoubleVar] = None,
             slider_cmd=None,
             slider_to: float = 1.0,
+            entry_width: int = 12,
         ) -> None:
             row_frame = ttk.Frame(section_editor)
             row_frame.grid(row=row_idx, column=0, sticky="ew", pady=1)
             row_frame.columnconfigure(1, weight=1)
             label_widget = ttk.Label(row_frame, text=label_text)
             label_widget.grid(row=0, column=0, sticky="w", padx=(0, 6))
-            entry_widget = ttk.Entry(row_frame, textvariable=variable, width=12)
+            entry_widget = ttk.Entry(row_frame, textvariable=variable, width=entry_width)
             entry_widget.grid(row=0, column=1, sticky="ew")
             if field_key == "amplitude":
                 on_commit = lambda a=axis: self._on_amplitude_entry(a)
@@ -462,6 +464,13 @@ class LayoutMixin:
         create_row(8, "sweep_end_hz", "Sweep end (Hz)", sweep_end_var)
         create_row(9, "ramp_start", "Ramp start (m)", ramp_start_var)
         create_row(10, "ramp_end", "Ramp end (m)", ramp_end_var)
+        create_row(
+            11,
+            "multisine_components",
+            "Multisine terms (A,f,phi;...)",
+            multisine_components_var,
+            entry_width=38,
+        )
 
         transition_enabled_var = tk.BooleanVar(value=False)
         transition_duration_var = tk.StringVar(value=f"{DEFAULT_TRANSITION_DURATION_S:.3f}")
@@ -528,6 +537,7 @@ class LayoutMixin:
             "sweep_end_var": sweep_end_var,
             "ramp_start_var": ramp_start_var,
             "ramp_end_var": ramp_end_var,
+            "multisine_components_var": multisine_components_var,
             "rows": row_meta,
             "duration_row": duration_row,
             "mode_row": mode_row,

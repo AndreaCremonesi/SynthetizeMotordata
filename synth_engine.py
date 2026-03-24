@@ -41,7 +41,8 @@ MODE_SINE = "sine"
 MODE_SWEEP = "sweep"
 MODE_RAMP = "ramp"
 MODE_CONSTANT = "constant"
-VALID_MODES = (MODE_SINE, MODE_SWEEP, MODE_RAMP, MODE_CONSTANT)
+MODE_MULTISINE = "multisine"
+VALID_MODES = (MODE_SINE, MODE_SWEEP, MODE_RAMP, MODE_CONSTANT, MODE_MULTISINE)
 
 EAT_AWAY_LEFT = "left"
 EAT_AWAY_RIGHT = "right"
@@ -67,6 +68,7 @@ class AxisSectionParams:
     ramp_start: float = 0.0
     ramp_end: float = 0.01
     constant_value: float = 0.0
+    multisine_components: str = "0.01,1.0,0.0; 0.005,3.0,90.0"
 
 
 @dataclass
@@ -216,6 +218,51 @@ def _validate_axis_params(axis_label: str, params: AxisSectionParams) -> None:
         raise ValueError(f"{axis_label}: frequency cannot be negative.")
     if params.sweep_start_hz < 0 or params.sweep_end_hz < 0:
         raise ValueError(f"{axis_label}: sweep frequencies cannot be negative.")
+    if params.mode == MODE_MULTISINE:
+        _parse_multisine_components(params.multisine_components, axis_label)
+
+
+def _parse_multisine_components(raw: str, axis_label: str = "Axis") -> List[Tuple[float, float, float]]:
+    text = str(raw).strip()
+    if not text:
+        raise ValueError(
+            f"{axis_label}: multisine components cannot be empty. "
+            "Use format 'amplitude,frequency_hz,phase_deg; ...'."
+        )
+
+    components: List[Tuple[float, float, float]] = []
+    tokens = [item.strip() for item in text.split(";") if item.strip()]
+    if not tokens:
+        raise ValueError(
+            f"{axis_label}: multisine components cannot be empty. "
+            "Use format 'amplitude,frequency_hz,phase_deg; ...'."
+        )
+
+    for idx, token in enumerate(tokens, start=1):
+        parts = [part.strip() for part in token.split(",")]
+        if len(parts) != 3:
+            raise ValueError(
+                f"{axis_label}: invalid multisine component #{idx} '{token}'. "
+                "Expected 'amplitude,frequency_hz,phase_deg'."
+            )
+        try:
+            amplitude = float(parts[0])
+            frequency_hz = float(parts[1])
+            phase_deg = float(parts[2])
+        except ValueError as exc:
+            raise ValueError(
+                f"{axis_label}: invalid multisine component #{idx} '{token}'. "
+                "Values must be numeric."
+            ) from exc
+        if not math.isfinite(amplitude) or not math.isfinite(frequency_hz) or not math.isfinite(phase_deg):
+            raise ValueError(f"{axis_label}: multisine component #{idx} contains non-finite values.")
+        if amplitude < 0:
+            raise ValueError(f"{axis_label}: multisine component #{idx} amplitude cannot be negative.")
+        if frequency_hz < 0:
+            raise ValueError(f"{axis_label}: multisine component #{idx} frequency cannot be negative.")
+        components.append((amplitude, frequency_hz, phase_deg))
+
+    return components
 
 
 def _section_sample_count(duration_s: float, sample_rate_hz: float) -> int:
@@ -282,6 +329,14 @@ def _generate_axis_section(t_local: np.ndarray, duration_s: float, params: AxisS
         k = (params.sweep_end_hz - params.sweep_start_hz) / duration_s
         phase = 2.0 * math.pi * (params.sweep_start_hz * t_local + 0.5 * k * t_local * t_local) + phase_rad
         return params.offset + params.amplitude * np.sin(phase)
+
+    if params.mode == MODE_MULTISINE:
+        values = np.full_like(t_local, params.offset, dtype=float)
+        components = _parse_multisine_components(params.multisine_components)
+        for amplitude, frequency_hz, phase_deg in components:
+            phase = 2.0 * math.pi * frequency_hz * t_local + math.radians(phase_deg)
+            values += amplitude * np.sin(phase)
+        return values
 
     raise ValueError(f"Unsupported mode: {params.mode}")
 
@@ -564,6 +619,10 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
             params.ramp_start = prev_end
         elif params.mode in (MODE_SINE, MODE_SWEEP):
             params.offset = prev_end - (params.amplitude * math.sin(math.radians(params.phase_deg)))
+        elif params.mode == MODE_MULTISINE:
+            components = _parse_multisine_components(params.multisine_components)
+            base_at_t0 = sum(amplitude * math.sin(math.radians(phase_deg)) for amplitude, _f, phase_deg in components)
+            params.offset = prev_end - base_at_t0
 
 
 def compute_velocity_acceleration(

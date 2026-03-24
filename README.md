@@ -15,6 +15,7 @@ The app previews position/velocity/acceleration/path, validates limits, supports
   - `sweep` (linear frequency sweep in Hz)
   - `ramp`
   - `constant`
+  - `multisine` (sum of multiple sine terms `A,f,phi; ...`)
 - Easy/Expert editing modes
   - Easy: continuity auto-linking between consecutive sections
   - Expert: full manual control
