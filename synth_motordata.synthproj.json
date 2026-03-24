@@ -1,0 +1,170 @@
+{
+  "schema_version": 1,
+  "saved_utc": "2026-03-21T11:25:07.299159+00:00",
+  "recipe": {
+    "sample_rate_hz": 500.0,
+    "y_pipeline": {
+      "sections": [
+        {
+          "duration_s": 5.0,
+          "params": {
+            "mode": "sine",
+            "amplitude": 0.01,
+            "offset": 0.0,
+            "phase_deg": 0.0,
+            "frequency_hz": 1.0,
+            "sweep_start_hz": 0.5,
+            "sweep_end_hz": 5.0,
+            "ramp_start": 0.0,
+            "ramp_end": 0.01,
+            "constant_value": 0.0
+          },
+          "is_auto_fill": false
+        },
+        {
+          "duration_s": 1.0,
+          "params": {
+            "mode": "ramp",
+            "amplitude": 0.01,
+            "offset": -0.000126,
+            "phase_deg": 0.0,
+            "frequency_hz": 1.0,
+            "sweep_start_hz": 0.5,
+            "sweep_end_hz": 5.0,
+            "ramp_start": -0.0001256603988335305,
+            "ramp_end": 0.01,
+            "constant_value": 0.0
+          },
+          "is_auto_fill": false
+        },
+        {
+          "duration_s": 1.0,
+          "params": {
+            "mode": "sine",
+            "amplitude": 0.01,
+            "offset": 0.009979748679202332,
+            "phase_deg": 180.0,
+            "frequency_hz": 1.0,
+            "sweep_start_hz": 0.5,
+            "sweep_end_hz": 5.0,
+            "ramp_start": 0.0,
+            "ramp_end": 0.01,
+            "constant_value": 0.0
+          },
+          "is_auto_fill": false
+        }
+      ],
+      "transitions": [
+        {
+          "enabled": true,
+          "duration_s": 0.5,
+          "eat_away_mode": "both",
+          "auto_added": false,
+          "status": "resolved"
+        },
+        {
+          "enabled": true,
+          "duration_s": 0.1,
+          "eat_away_mode": "both",
+          "auto_added": false,
+          "status": "resolved"
+        }
+      ]
+    },
+    "z_pipeline": {
+      "sections": [
+        {
+          "duration_s": 5.0,
+          "params": {
+            "mode": "ramp",
+            "amplitude": 0.01,
+            "offset": 0.0,
+            "phase_deg": 0.0,
+            "frequency_hz": 1.0,
+            "sweep_start_hz": 0.5,
+            "sweep_end_hz": 5.0,
+            "ramp_start": 0.0,
+            "ramp_end": 0.01,
+            "constant_value": 0.0
+          },
+          "is_auto_fill": false
+        },
+        {
+          "duration_s": 2.0,
+          "params": {
+            "mode": "constant",
+            "amplitude": 0.01,
+            "offset": 0.0,
+            "phase_deg": 0.0,
+            "frequency_hz": 1.0,
+            "sweep_start_hz": 0.5,
+            "sweep_end_hz": 5.0,
+            "ramp_start": 0.0,
+            "ramp_end": 0.01,
+            "constant_value": 0.009996000000000001
+          },
+          "is_auto_fill": true
+        }
+      ],
+      "transitions": [
+        {
+          "enabled": false,
+          "duration_s": 0.1,
+          "eat_away_mode": "both",
+          "auto_added": false,
+          "status": "resolved"
+        }
+      ]
+    }
+  },
+  "limits": {
+    "y": {
+      "enable_min_value": false,
+      "min_value": -1.0,
+      "enable_max_value": false,
+      "max_value": 1.0,
+      "enable_max_speed": false,
+      "max_speed": 1.0,
+      "enable_max_acceleration": false,
+      "max_acceleration": 1.0,
+      "enable_jump_threshold": true,
+      "max_jump": 0.01
+    },
+    "z": {
+      "enable_min_value": false,
+      "min_value": -1.0,
+      "enable_max_value": false,
+      "max_value": 1.0,
+      "enable_max_speed": false,
+      "max_speed": 1.0,
+      "enable_max_acceleration": false,
+      "max_acceleration": 1.0,
+      "enable_jump_threshold": true,
+      "max_jump": 0.01
+    }
+  },
+  "ui": {
+    "edit_mode": "Expert",
+    "sample_rate_text": "500.000",
+    "output_name": "synth_motordata.csv",
+    "window_geometry": "1920x1009+-8+-8",
+    "selected_rows": {
+      "y": {
+        "type": "transition",
+        "index": 0
+      },
+      "z": {
+        "type": "section",
+        "index": 1
+      }
+    },
+    "selected_plot_tab": 2,
+    "sash_positions": {
+      "main": 776,
+      "controls": 542,
+      "axes": 374,
+      "axis_y": 309,
+      "axis_z": 309
+    }
+  }
+}
