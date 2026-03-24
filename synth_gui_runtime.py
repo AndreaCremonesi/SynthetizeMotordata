@@ -525,7 +525,9 @@ class RuntimeMixin:
         self._load_selected_item_into_editor("z")
 
         n = len(result["t"])
-        duration = float(result["t"][-1]) if n > 1 else 0.0
+        y_duration = float(result["y_boundaries"][-1]) if result["y_boundaries"] else 0.0
+        z_duration = float(result["z_boundaries"][-1]) if result["z_boundaries"] else 0.0
+        duration = max(y_duration, z_duration)
         warning_count = len(result["report"].issues)
         extra = f" {auto_fill_message}" if auto_fill_message else ""
         if warning_count:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Dict, Mapping
 
 try:
@@ -40,9 +41,12 @@ def _as_dict(name: str, value: Any) -> Dict[str, Any]:
 
 def _as_float(name: str, value: Any) -> float:
     try:
-        return float(value)
+        parsed = float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{name} must be numeric.") from exc
+    if not math.isfinite(parsed):
+        raise ValueError(f"{name} must be finite.")
+    return parsed
 
 
 def _as_bool(name: str, value: Any) -> bool:

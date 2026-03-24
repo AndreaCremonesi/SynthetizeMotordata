@@ -249,6 +249,8 @@ class AxisEditorMixin:
             raise ValueError(f"{label} must be numeric.") from exc
         if not (value == value):
             raise ValueError(f"{label} cannot be NaN.")
+        if value == float("inf") or value == float("-inf"):
+            raise ValueError(f"{label} must be finite.")
         return value
 
     def _read_section_editor(self, axis: str) -> AxisMotionSection:

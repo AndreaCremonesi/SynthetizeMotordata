@@ -569,6 +569,17 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
 def compute_velocity_acceleration(
     y_values: np.ndarray, z_values: np.ndarray, sample_rate_hz: float
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    n = len(y_values)
+    if n != len(z_values):
+        raise ValueError("Y/Z arrays must have the same length to compute dynamics.")
+    if n == 0:
+        empty = np.array([], dtype=float)
+        return empty, empty, empty, empty
+
+    if n == 1:
+        zeros = np.zeros(1, dtype=float)
+        return zeros.copy(), zeros.copy(), zeros.copy(), zeros.copy()
+
     dt = 1.0 / sample_rate_hz
     vy = np.gradient(y_values, dt)
     vz = np.gradient(z_values, dt)
