@@ -332,6 +332,7 @@ class LayoutMixin:
         tree.column("details", width=220, anchor="w")
         tree.grid(row=1, column=0, sticky="nsew")
         tree.bind("<<TreeviewSelect>>", lambda _event, a=axis: self._on_axis_selection_changed(a))
+        tree.bind("<Button-1>", lambda event, a=axis: self._on_axis_tree_click(a, event), add="+")
         tree.tag_configure(TREE_TAG_TRANSITION_ACTIVE, background="#ffe066")
         tree.tag_configure(TREE_TAG_TRANSITION_RESOLVED, background="#fff3b0")
         tree.tag_configure(TREE_TAG_AUTO_FILL_SECTION, background="#d9edf7")

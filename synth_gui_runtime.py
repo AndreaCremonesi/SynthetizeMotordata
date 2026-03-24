@@ -796,8 +796,9 @@ class RuntimeMixin:
                 row_index = int(axis_row.get("index", 0))
             except (TypeError, ValueError):
                 row_index = 0
-            if row_type not in ("section", "transition"):
-                row_type = "section"
+            if row_type not in ("section", "transition", "none"):
+                row_type = "none"
+                row_index = -1
             self._refresh_axis_tree(axis, select=(row_type, row_index))
             self._load_selected_item_into_editor(axis)
 

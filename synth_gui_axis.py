@@ -31,11 +31,53 @@ class AxisEditorMixin:
             iid = selected[0]
             if iid in row_map:
                 return row_map[iid]
-        return "section", 0
+
+        stored_type = str(ui.get("selected_type", "none"))
+        try:
+            stored_index = int(ui.get("selected_index", -1))
+        except (TypeError, ValueError):
+            stored_index = -1
+
+        if stored_type == "section":
+            sections = self._sections_for_axis(axis)
+            if 0 <= stored_index < len(sections):
+                return "section", stored_index
+        elif stored_type == "transition":
+            transitions = self._transitions_for_axis(axis)
+            if 0 <= stored_index < len(transitions):
+                return "transition", stored_index
+
+        return "none", -1
+
+    def _clear_axis_selection(self, axis: str) -> None:
+        ui = self.axis_ui[axis]
+        tree: ttk.Treeview = ui["tree"]
+        selected = tree.selection()
+        if selected:
+            tree.selection_remove(*selected)
+        tree.focus("")
+        ui["selected_type"] = "none"
+        ui["selected_index"] = -1
+
+    def _on_axis_tree_click(self, axis: str, event: tk.Event) -> Optional[str]:
+        ui = self.axis_ui[axis]
+        tree: ttk.Treeview = ui["tree"]
+        clicked_iid = tree.identify_row(event.y)
+        if clicked_iid:
+            return None
+
+        self._clear_axis_selection(axis)
+        self._load_selected_item_into_editor(axis)
+        refresh_fn = getattr(self, "_refresh_selection_highlight", None)
+        if callable(refresh_fn):
+            refresh_fn()
+        return "break"
 
     def _selected_section_index_for_actions(self, axis: str) -> int:
         row_type, index = self._selected_row_info(axis)
         sections = self._sections_for_axis(axis)
+        if row_type == "none":
+            return max(0, len(sections) - 1)
         if row_type == "section":
             idx = min(max(index, 0), max(0, len(sections) - 1))
             if sections and sections[idx].is_auto_fill:
@@ -94,10 +136,15 @@ class AxisEditorMixin:
         ui["total_var"].set(f"{total_duration:.4f} s ({len(sections)} sections)")
 
         if not row_map:
+            ui["selected_type"] = "none"
+            ui["selected_index"] = -1
             return
 
         target_iid: Optional[str] = None
         target_type, target_idx = select
+        if target_type == "none":
+            self._clear_axis_selection(axis)
+            return
         for iid, (row_type, row_idx) in row_map.items():
             if row_type == target_type and row_idx == target_idx:
                 target_iid = iid
@@ -107,6 +154,7 @@ class AxisEditorMixin:
 
         tree.selection_set(target_iid)
         tree.focus(target_iid)
+        ui["selected_type"], ui["selected_index"] = row_map[target_iid]
 
     def _show_section_editor(self, axis: str) -> None:
         ui = self.axis_ui[axis]
@@ -123,6 +171,9 @@ class AxisEditorMixin:
         ui = self.axis_ui[axis]
         ui["selected_type"] = row_type
         ui["selected_index"] = row_index
+
+        if row_type == "none":
+            return
 
         if row_type == "transition":
             self._show_transition_editor(axis)
@@ -326,6 +377,9 @@ class AxisEditorMixin:
         row_type, row_index = self._selected_row_info(axis)
         sections = self._sections_for_axis(axis)
         transitions = self._transitions_for_axis(axis)
+
+        if row_type == "none":
+            return True
 
         try:
             if row_type == "transition":
@@ -531,6 +585,11 @@ class AxisEditorMixin:
         self._schedule_refresh()
 
     def _delete_axis_section(self, axis: str) -> None:
+        row_type, _row_index = self._selected_row_info(axis)
+        if row_type == "none":
+            self._set_status(f"{axis.upper()}: select a section to delete.", is_error=False)
+            return
+
         sections = self._sections_for_axis(axis)
         if len(sections) <= 1:
             messagebox.showerror("Cannot Delete", f"{axis.upper()} must keep at least one section.")
@@ -556,6 +615,11 @@ class AxisEditorMixin:
         self._schedule_refresh()
 
     def _move_axis_section(self, axis: str, direction: int) -> None:
+        row_type, _row_index = self._selected_row_info(axis)
+        if row_type == "none":
+            self._set_status(f"{axis.upper()}: select a section to move.", is_error=False)
+            return
+
         sections = self._sections_for_axis(axis)
         if len(sections) <= 1:
             return
