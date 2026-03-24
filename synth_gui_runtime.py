@@ -819,9 +819,17 @@ class RuntimeMixin:
             except Exception:
                 pass
 
-        self._restore_sash_positions(sash_positions if isinstance(sash_positions, dict) else {})
+        normalized_sash_positions = sash_positions if isinstance(sash_positions, dict) else {}
+        self._restore_sash_positions(normalized_sash_positions)
         self._apply_easy_mode_if_needed()
         self._refresh_preview()
+        # Refresh steps (editor switching/plot updates) can perturb pane sashes on some layouts.
+        # Re-apply saved sash positions so loaded projects end in the expected visual layout.
+        if normalized_sash_positions:
+            self._restore_sash_positions(normalized_sash_positions)
+            self.root.after_idle(
+                lambda positions=dict(normalized_sash_positions): self._restore_sash_positions(positions)
+            )
 
         self.project_path = source_path
         self.project_path_var.set(f"Project: {source_path}")
