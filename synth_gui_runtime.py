@@ -44,6 +44,28 @@ class RuntimeMixin:
             return None
         return row_index
 
+    def _focus_is_inside_axis_editor(self, axis: str) -> bool:
+        focus_widget = self.root.focus_get()
+        if focus_widget is None:
+            return False
+        ui = self.axis_ui.get(axis, {})
+        containers = [ui.get("section_editor"), ui.get("transition_editor")]
+        widget: Any = focus_widget
+        while widget is not None:
+            if widget in containers:
+                return True
+            try:
+                parent_name = widget.winfo_parent()
+            except Exception:
+                break
+            if not parent_name:
+                break
+            try:
+                widget = widget.nametowidget(parent_name)
+            except Exception:
+                break
+        return False
+
     def _refresh_selection_highlight(self) -> None:
         result = self._last_generated
         if not result:
@@ -517,12 +539,21 @@ class RuntimeMixin:
         )
         self._set_warning_report(result["report"])
 
-        y_sel = self._selected_row_info("y")
-        z_sel = self._selected_row_info("z")
-        self._refresh_axis_tree("y", select=y_sel)
-        self._refresh_axis_tree("z", select=z_sel)
-        self._load_selected_item_into_editor("y")
-        self._load_selected_item_into_editor("z")
+        y_sel_before = self._selected_row_info("y")
+        z_sel_before = self._selected_row_info("z")
+        y_editor_has_focus = self._focus_is_inside_axis_editor("y")
+        z_editor_has_focus = self._focus_is_inside_axis_editor("z")
+
+        self._refresh_axis_tree("y", select=y_sel_before)
+        self._refresh_axis_tree("z", select=z_sel_before)
+
+        y_sel_after = self._selected_row_info("y")
+        z_sel_after = self._selected_row_info("z")
+
+        if not (y_editor_has_focus and y_sel_after == y_sel_before):
+            self._load_selected_item_into_editor("y")
+        if not (z_editor_has_focus and z_sel_after == z_sel_before):
+            self._load_selected_item_into_editor("z")
 
         n = len(result["t"])
         y_duration = float(result["y_boundaries"][-1]) if result["y_boundaries"] else 0.0
