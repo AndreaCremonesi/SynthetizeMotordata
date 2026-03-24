@@ -44,6 +44,9 @@ MODE_CONSTANT = "constant"
 MODE_MULTISINE = "multisine"
 VALID_MODES = (MODE_SINE, MODE_SWEEP, MODE_RAMP, MODE_CONSTANT, MODE_MULTISINE)
 
+DEFAULT_MULTISINE_COMPONENTS = "0.01,1.0,0.0; 0.005,3.0,90.0"
+DEFAULT_SECONDARY_MULTISINE_COMPONENTS = "0.0,1.0,0.0"
+
 EAT_AWAY_LEFT = "left"
 EAT_AWAY_RIGHT = "right"
 EAT_AWAY_BOTH = "both"
@@ -68,7 +71,19 @@ class AxisSectionParams:
     ramp_start: float = 0.0
     ramp_end: float = 0.01
     constant_value: float = 0.0
-    multisine_components: str = "0.01,1.0,0.0; 0.005,3.0,90.0"
+    multisine_components: str = DEFAULT_MULTISINE_COMPONENTS
+    secondary_enabled: bool = False
+    secondary_mode: str = MODE_SINE
+    secondary_amplitude: float = 0.0
+    secondary_offset: float = 0.0
+    secondary_phase_deg: float = 0.0
+    secondary_frequency_hz: float = 1.0
+    secondary_sweep_start_hz: float = 0.5
+    secondary_sweep_end_hz: float = 5.0
+    secondary_ramp_start: float = 0.0
+    secondary_ramp_end: float = 0.0
+    secondary_constant_value: float = 0.0
+    secondary_multisine_components: str = DEFAULT_SECONDARY_MULTISINE_COMPONENTS
 
 
 @dataclass
@@ -209,17 +224,50 @@ def validate_header(header: Sequence[str]) -> None:
 
 
 def _validate_axis_params(axis_label: str, params: AxisSectionParams) -> None:
-    if params.mode not in VALID_MODES:
+    _validate_waveform_params(
+        axis_label=axis_label,
+        waveform_label="primary waveform",
+        mode=params.mode,
+        amplitude=params.amplitude,
+        frequency_hz=params.frequency_hz,
+        sweep_start_hz=params.sweep_start_hz,
+        sweep_end_hz=params.sweep_end_hz,
+        multisine_components=params.multisine_components,
+    )
+    if params.secondary_enabled:
+        _validate_waveform_params(
+            axis_label=axis_label,
+            waveform_label="secondary waveform",
+            mode=params.secondary_mode,
+            amplitude=params.secondary_amplitude,
+            frequency_hz=params.secondary_frequency_hz,
+            sweep_start_hz=params.secondary_sweep_start_hz,
+            sweep_end_hz=params.secondary_sweep_end_hz,
+            multisine_components=params.secondary_multisine_components,
+        )
+
+
+def _validate_waveform_params(
+    axis_label: str,
+    waveform_label: str,
+    mode: str,
+    amplitude: float,
+    frequency_hz: float,
+    sweep_start_hz: float,
+    sweep_end_hz: float,
+    multisine_components: str,
+) -> None:
+    if mode not in VALID_MODES:
         allowed = ", ".join(VALID_MODES)
-        raise ValueError(f"{axis_label}: invalid mode '{params.mode}' (allowed: {allowed}).")
-    if params.amplitude < 0:
-        raise ValueError(f"{axis_label}: amplitude cannot be negative.")
-    if params.frequency_hz < 0:
-        raise ValueError(f"{axis_label}: frequency cannot be negative.")
-    if params.sweep_start_hz < 0 or params.sweep_end_hz < 0:
-        raise ValueError(f"{axis_label}: sweep frequencies cannot be negative.")
-    if params.mode == MODE_MULTISINE:
-        _parse_multisine_components(params.multisine_components, axis_label)
+        raise ValueError(f"{axis_label} ({waveform_label}): invalid mode '{mode}' (allowed: {allowed}).")
+    if amplitude < 0:
+        raise ValueError(f"{axis_label} ({waveform_label}): amplitude cannot be negative.")
+    if frequency_hz < 0:
+        raise ValueError(f"{axis_label} ({waveform_label}): frequency cannot be negative.")
+    if sweep_start_hz < 0 or sweep_end_hz < 0:
+        raise ValueError(f"{axis_label} ({waveform_label}): sweep frequencies cannot be negative.")
+    if mode == MODE_MULTISINE:
+        _parse_multisine_components(multisine_components, f"{axis_label} ({waveform_label})")
 
 
 def _parse_multisine_components(raw: str, axis_label: str = "Axis") -> List[Tuple[float, float, float]]:
@@ -310,35 +358,109 @@ def validate_recipe(recipe: TrajectoryRecipe) -> None:
 
 
 def _generate_axis_section(t_local: np.ndarray, duration_s: float, params: AxisSectionParams) -> np.ndarray:
-    phase_rad = math.radians(params.phase_deg)
+    values = _generate_waveform(
+        t_local=t_local,
+        duration_s=duration_s,
+        mode=params.mode,
+        amplitude=params.amplitude,
+        offset=params.offset,
+        phase_deg=params.phase_deg,
+        frequency_hz=params.frequency_hz,
+        sweep_start_hz=params.sweep_start_hz,
+        sweep_end_hz=params.sweep_end_hz,
+        ramp_start=params.ramp_start,
+        ramp_end=params.ramp_end,
+        constant_value=params.constant_value,
+        multisine_components=params.multisine_components,
+    )
+    if params.secondary_enabled:
+        values += _generate_waveform(
+            t_local=t_local,
+            duration_s=duration_s,
+            mode=params.secondary_mode,
+            amplitude=params.secondary_amplitude,
+            offset=params.secondary_offset,
+            phase_deg=params.secondary_phase_deg,
+            frequency_hz=params.secondary_frequency_hz,
+            sweep_start_hz=params.secondary_sweep_start_hz,
+            sweep_end_hz=params.secondary_sweep_end_hz,
+            ramp_start=params.secondary_ramp_start,
+            ramp_end=params.secondary_ramp_end,
+            constant_value=params.secondary_constant_value,
+            multisine_components=params.secondary_multisine_components,
+        )
+    return values
 
-    if params.mode == MODE_CONSTANT:
-        return np.full_like(t_local, params.constant_value, dtype=float)
 
-    if params.mode == MODE_RAMP:
+def _generate_waveform(
+    t_local: np.ndarray,
+    duration_s: float,
+    mode: str,
+    amplitude: float,
+    offset: float,
+    phase_deg: float,
+    frequency_hz: float,
+    sweep_start_hz: float,
+    sweep_end_hz: float,
+    ramp_start: float,
+    ramp_end: float,
+    constant_value: float,
+    multisine_components: str,
+) -> np.ndarray:
+    phase_rad = math.radians(phase_deg)
+
+    if mode == MODE_CONSTANT:
+        return np.full_like(t_local, constant_value, dtype=float)
+
+    if mode == MODE_RAMP:
         if duration_s <= 0:
-            return np.full_like(t_local, params.ramp_start, dtype=float)
+            return np.full_like(t_local, ramp_start, dtype=float)
         ratio = t_local / duration_s
-        return params.ramp_start + (params.ramp_end - params.ramp_start) * ratio
+        return ramp_start + (ramp_end - ramp_start) * ratio
 
-    if params.mode == MODE_SINE:
-        phase = 2.0 * math.pi * params.frequency_hz * t_local + phase_rad
-        return params.offset + params.amplitude * np.sin(phase)
+    if mode == MODE_SINE:
+        phase = 2.0 * math.pi * frequency_hz * t_local + phase_rad
+        return offset + amplitude * np.sin(phase)
 
-    if params.mode == MODE_SWEEP:
-        k = (params.sweep_end_hz - params.sweep_start_hz) / duration_s
-        phase = 2.0 * math.pi * (params.sweep_start_hz * t_local + 0.5 * k * t_local * t_local) + phase_rad
-        return params.offset + params.amplitude * np.sin(phase)
+    if mode == MODE_SWEEP:
+        if duration_s <= 0:
+            phase = phase_rad
+            return np.full_like(t_local, offset + amplitude * math.sin(phase), dtype=float)
+        k = (sweep_end_hz - sweep_start_hz) / duration_s
+        phase = 2.0 * math.pi * (sweep_start_hz * t_local + 0.5 * k * t_local * t_local) + phase_rad
+        return offset + amplitude * np.sin(phase)
 
-    if params.mode == MODE_MULTISINE:
-        values = np.full_like(t_local, params.offset, dtype=float)
-        components = _parse_multisine_components(params.multisine_components)
-        for amplitude, frequency_hz, phase_deg in components:
-            phase = 2.0 * math.pi * frequency_hz * t_local + math.radians(phase_deg)
-            values += amplitude * np.sin(phase)
+    if mode == MODE_MULTISINE:
+        values = np.full_like(t_local, offset, dtype=float)
+        components = _parse_multisine_components(multisine_components)
+        for component_amplitude, component_frequency_hz, component_phase_deg in components:
+            phase = 2.0 * math.pi * component_frequency_hz * t_local + math.radians(component_phase_deg)
+            values += component_amplitude * np.sin(phase)
         return values
 
-    raise ValueError(f"Unsupported mode: {params.mode}")
+    raise ValueError(f"Unsupported mode: {mode}")
+
+
+def _waveform_start_value(
+    mode: str,
+    amplitude: float,
+    offset: float,
+    phase_deg: float,
+    ramp_start: float,
+    constant_value: float,
+    multisine_components: str,
+) -> float:
+    if mode == MODE_CONSTANT:
+        return float(constant_value)
+    if mode == MODE_RAMP:
+        return float(ramp_start)
+    if mode in (MODE_SINE, MODE_SWEEP):
+        return float(offset + amplitude * math.sin(math.radians(phase_deg)))
+    if mode == MODE_MULTISINE:
+        components = _parse_multisine_components(multisine_components)
+        base = sum(comp_amp * math.sin(math.radians(comp_phase)) for comp_amp, _comp_f, comp_phase in components)
+        return float(offset + base)
+    raise ValueError(f"Unsupported mode: {mode}")
 
 
 def _endpoint_derivatives(values: np.ndarray, dt: float, at_start: bool) -> Tuple[float, float]:
@@ -613,16 +735,44 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
     for idx in range(1, len(sections)):
         prev_end = _section_end_value(sections[idx - 1], sample_rate_hz)
         params = sections[idx].params
+        primary_start = _waveform_start_value(
+            mode=params.mode,
+            amplitude=params.amplitude,
+            offset=params.offset,
+            phase_deg=params.phase_deg,
+            ramp_start=params.ramp_start,
+            constant_value=params.constant_value,
+            multisine_components=params.multisine_components,
+        )
+        if params.secondary_enabled:
+            target_secondary_start = prev_end - primary_start
+            if params.secondary_mode == MODE_CONSTANT:
+                params.secondary_constant_value = target_secondary_start
+            elif params.secondary_mode == MODE_RAMP:
+                params.secondary_ramp_start = target_secondary_start
+            elif params.secondary_mode in (MODE_SINE, MODE_SWEEP):
+                params.secondary_offset = target_secondary_start - (
+                    params.secondary_amplitude * math.sin(math.radians(params.secondary_phase_deg))
+                )
+            elif params.secondary_mode == MODE_MULTISINE:
+                components = _parse_multisine_components(params.secondary_multisine_components)
+                base_at_t0 = sum(
+                    amplitude * math.sin(math.radians(phase_deg)) for amplitude, _f, phase_deg in components
+                )
+                params.secondary_offset = target_secondary_start - base_at_t0
+            continue
+
+        target_primary_start = prev_end
         if params.mode == MODE_CONSTANT:
-            params.constant_value = prev_end
+            params.constant_value = target_primary_start
         elif params.mode == MODE_RAMP:
-            params.ramp_start = prev_end
+            params.ramp_start = target_primary_start
         elif params.mode in (MODE_SINE, MODE_SWEEP):
-            params.offset = prev_end - (params.amplitude * math.sin(math.radians(params.phase_deg)))
+            params.offset = target_primary_start - (params.amplitude * math.sin(math.radians(params.phase_deg)))
         elif params.mode == MODE_MULTISINE:
             components = _parse_multisine_components(params.multisine_components)
             base_at_t0 = sum(amplitude * math.sin(math.radians(phase_deg)) for amplitude, _f, phase_deg in components)
-            params.offset = prev_end - base_at_t0
+            params.offset = target_primary_start - base_at_t0
 
 
 def compute_velocity_acceleration(

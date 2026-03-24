@@ -30,6 +30,7 @@ except ModuleNotFoundError:
 
 
 PREVIEW_MAX_POINTS = 4000
+PREVIEW_MAX_POINTS_DYNAMICS = 20000
 
 
 class RuntimeMixin:
@@ -415,7 +416,14 @@ class RuntimeMixin:
 
         if render_dynamics:
             vy, vz, ay, az = compute_velocity_acceleration(y, z, self.recipe.sample_rate_hz)
-            t_plot, vy_plot, vz_plot, ay_plot, az_plot = self._decimate_for_preview(t, vy, vz, ay, az)
+            t_plot, vy_plot, vz_plot, ay_plot, az_plot = self._decimate_for_preview(
+                t,
+                vy,
+                vz,
+                ay,
+                az,
+                max_points=PREVIEW_MAX_POINTS_DYNAMICS,
+            )
             self.ax_vel.clear()
             self.ax_acc.clear()
             self.ax_vel.plot(t_plot, vy_plot, label="Y velocity", color="#1f77b4", linewidth=1.2)

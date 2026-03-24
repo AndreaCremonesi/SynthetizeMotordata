@@ -82,10 +82,23 @@ def _params_to_dict(params: AxisSectionParams) -> Dict[str, Any]:
         "ramp_end": params.ramp_end,
         "constant_value": params.constant_value,
         "multisine_components": params.multisine_components,
+        "secondary_enabled": params.secondary_enabled,
+        "secondary_mode": params.secondary_mode,
+        "secondary_amplitude": params.secondary_amplitude,
+        "secondary_offset": params.secondary_offset,
+        "secondary_phase_deg": params.secondary_phase_deg,
+        "secondary_frequency_hz": params.secondary_frequency_hz,
+        "secondary_sweep_start_hz": params.secondary_sweep_start_hz,
+        "secondary_sweep_end_hz": params.secondary_sweep_end_hz,
+        "secondary_ramp_start": params.secondary_ramp_start,
+        "secondary_ramp_end": params.secondary_ramp_end,
+        "secondary_constant_value": params.secondary_constant_value,
+        "secondary_multisine_components": params.secondary_multisine_components,
     }
 
 
 def _params_from_dict(data: Mapping[str, Any], prefix: str) -> AxisSectionParams:
+    defaults = AxisSectionParams()
     return AxisSectionParams(
         mode=_as_str(f"{prefix}.mode", data.get("mode")),
         amplitude=_as_float(f"{prefix}.amplitude", data.get("amplitude")),
@@ -99,7 +112,52 @@ def _params_from_dict(data: Mapping[str, Any], prefix: str) -> AxisSectionParams
         constant_value=_as_float(f"{prefix}.constant_value", data.get("constant_value")),
         multisine_components=_as_str(
             f"{prefix}.multisine_components",
-            data.get("multisine_components", AxisSectionParams().multisine_components),
+            data.get("multisine_components", defaults.multisine_components),
+        ),
+        secondary_enabled=_as_bool(
+            f"{prefix}.secondary_enabled",
+            data.get("secondary_enabled", defaults.secondary_enabled),
+        ),
+        secondary_mode=_as_str(f"{prefix}.secondary_mode", data.get("secondary_mode", defaults.secondary_mode)),
+        secondary_amplitude=_as_float(
+            f"{prefix}.secondary_amplitude",
+            data.get("secondary_amplitude", defaults.secondary_amplitude),
+        ),
+        secondary_offset=_as_float(
+            f"{prefix}.secondary_offset",
+            data.get("secondary_offset", defaults.secondary_offset),
+        ),
+        secondary_phase_deg=_as_float(
+            f"{prefix}.secondary_phase_deg",
+            data.get("secondary_phase_deg", defaults.secondary_phase_deg),
+        ),
+        secondary_frequency_hz=_as_float(
+            f"{prefix}.secondary_frequency_hz",
+            data.get("secondary_frequency_hz", defaults.secondary_frequency_hz),
+        ),
+        secondary_sweep_start_hz=_as_float(
+            f"{prefix}.secondary_sweep_start_hz",
+            data.get("secondary_sweep_start_hz", defaults.secondary_sweep_start_hz),
+        ),
+        secondary_sweep_end_hz=_as_float(
+            f"{prefix}.secondary_sweep_end_hz",
+            data.get("secondary_sweep_end_hz", defaults.secondary_sweep_end_hz),
+        ),
+        secondary_ramp_start=_as_float(
+            f"{prefix}.secondary_ramp_start",
+            data.get("secondary_ramp_start", defaults.secondary_ramp_start),
+        ),
+        secondary_ramp_end=_as_float(
+            f"{prefix}.secondary_ramp_end",
+            data.get("secondary_ramp_end", defaults.secondary_ramp_end),
+        ),
+        secondary_constant_value=_as_float(
+            f"{prefix}.secondary_constant_value",
+            data.get("secondary_constant_value", defaults.secondary_constant_value),
+        ),
+        secondary_multisine_components=_as_str(
+            f"{prefix}.secondary_multisine_components",
+            data.get("secondary_multisine_components", defaults.secondary_multisine_components),
         ),
     )
 

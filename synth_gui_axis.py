@@ -206,6 +206,18 @@ class AxisEditorMixin:
         ui["ramp_start_var"].set(f"{params.ramp_start:.6f}")
         ui["ramp_end_var"].set(f"{params.ramp_end:.6f}")
         ui["multisine_components_var"].set(str(params.multisine_components))
+        ui["secondary_enabled_var"].set(bool(params.secondary_enabled))
+        ui["secondary_mode_var"].set(params.secondary_mode)
+        ui["secondary_constant_var"].set(f"{params.secondary_constant_value:.6f}")
+        ui["secondary_amplitude_var"].set(f"{params.secondary_amplitude:.6f}")
+        ui["secondary_offset_var"].set(f"{params.secondary_offset:.6f}")
+        ui["secondary_phase_var"].set(f"{params.secondary_phase_deg:.6f}")
+        ui["secondary_frequency_var"].set(f"{params.secondary_frequency_hz:.6f}")
+        ui["secondary_sweep_start_var"].set(f"{params.secondary_sweep_start_hz:.6f}")
+        ui["secondary_sweep_end_var"].set(f"{params.secondary_sweep_end_hz:.6f}")
+        ui["secondary_ramp_start_var"].set(f"{params.secondary_ramp_start:.6f}")
+        ui["secondary_ramp_end_var"].set(f"{params.secondary_ramp_end:.6f}")
+        ui["secondary_multisine_components_var"].set(str(params.secondary_multisine_components))
         self._suspend_events = False
 
         self._update_axis_editor_visibility(axis)
@@ -235,20 +247,46 @@ class AxisEditorMixin:
     def _update_axis_editor_visibility(self, axis: str) -> None:
         ui = self.axis_ui[axis]
         mode = str(ui["mode_var"].get()).strip().lower()
+        secondary_mode = str(ui["secondary_mode_var"].get()).strip().lower()
+        secondary_enabled = bool(ui["secondary_enabled_var"].get())
         rows: Dict[str, Dict[str, Any]] = ui["rows"]
         mode_combo: ttk.Combobox = ui["mode_combo"]
+        secondary_check: ttk.Checkbutton = ui["secondary_check"]
+        secondary_mode_combo: ttk.Combobox = ui["secondary_mode_combo"]
+        secondary_mode_row: ttk.Frame = ui["secondary_mode_row"]
+        secondary_enabled_row: ttk.Frame = ui["secondary_enabled_row"]
 
-        visible_by_mode = {
+        visible_primary_by_mode = {
             MODE_CONSTANT: {"constant_value"},
             MODE_RAMP: {"ramp_start", "ramp_end"},
             MODE_SINE: {"amplitude", "offset", "phase_deg", "frequency_hz"},
             MODE_SWEEP: {"amplitude", "offset", "phase_deg", "sweep_start_hz", "sweep_end_hz"},
             MODE_MULTISINE: {"offset", "multisine_components"},
         }
-        visible = visible_by_mode.get(mode, set())
+        visible_secondary_by_mode = {
+            MODE_CONSTANT: {"secondary_constant_value"},
+            MODE_RAMP: {"secondary_ramp_start", "secondary_ramp_end"},
+            MODE_SINE: {"secondary_amplitude", "secondary_offset", "secondary_phase_deg", "secondary_frequency_hz"},
+            MODE_SWEEP: {
+                "secondary_amplitude",
+                "secondary_offset",
+                "secondary_phase_deg",
+                "secondary_sweep_start_hz",
+                "secondary_sweep_end_hz",
+            },
+            MODE_MULTISINE: {"secondary_offset", "secondary_multisine_components"},
+        }
+        visible_primary = visible_primary_by_mode.get(mode, set())
+        visible_secondary = visible_secondary_by_mode.get(secondary_mode, set()) if secondary_enabled else set()
+        visible = visible_primary.union(visible_secondary)
 
         sections = self._sections_for_axis(axis)
         selected_auto_fill = False
+        secondary_enabled_row.grid()
+        if secondary_enabled:
+            secondary_mode_row.grid()
+        else:
+            secondary_mode_row.grid_remove()
         for key, meta in rows.items():
             frame = meta["frame"]
             if key in visible:
@@ -261,12 +299,20 @@ class AxisEditorMixin:
         if row_type == "section" and 0 <= row_index < len(sections):
             selected_auto_fill = sections[row_index].is_auto_fill
         if not selected_auto_fill and self.edit_mode_var.get() == EDIT_MODE_EASY and row_type == "section" and row_index > 0:
-            if mode == MODE_CONSTANT:
-                lock_field = "constant_value"
-            elif mode == MODE_RAMP:
-                lock_field = "ramp_start"
-            elif mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
-                lock_field = "offset"
+            if secondary_enabled:
+                if secondary_mode == MODE_CONSTANT:
+                    lock_field = "secondary_constant_value"
+                elif secondary_mode == MODE_RAMP:
+                    lock_field = "secondary_ramp_start"
+                elif secondary_mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
+                    lock_field = "secondary_offset"
+            else:
+                if mode == MODE_CONSTANT:
+                    lock_field = "constant_value"
+                elif mode == MODE_RAMP:
+                    lock_field = "ramp_start"
+                elif mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
+                    lock_field = "offset"
 
         for key, meta in rows.items():
             entry: ttk.Entry = meta["entry"]
@@ -292,6 +338,11 @@ class AxisEditorMixin:
             else:
                 label.configure(foreground="#555555" if state == "readonly" else "black")
 
+        secondary_check.configure(state="disabled" if selected_auto_fill else "normal")
+        if selected_auto_fill:
+            secondary_mode_combo.configure(state="disabled")
+        else:
+            secondary_mode_combo.configure(state="readonly" if secondary_enabled else "disabled")
         ui["duration_entry"].configure(state="readonly" if selected_auto_fill else "normal")
         mode_combo.configure(state="disabled" if selected_auto_fill else "readonly")
 
@@ -315,7 +366,13 @@ class AxisEditorMixin:
             raise ValueError(f"{axis_label}: duration must be > 0.")
 
         mode = str(ui["mode_var"].get()).strip().lower()
-        params = AxisSectionParams(mode=mode)
+        row_type, row_index = self._selected_row_info(axis)
+        sections = self._sections_for_axis(axis)
+        if row_type == "section" and 0 <= row_index < len(sections):
+            params = AxisSectionParams(**vars(sections[row_index].params))
+        else:
+            params = AxisSectionParams()
+        params.mode = mode
         if mode == MODE_CONSTANT:
             params.constant_value = self._parse_float(f"{axis_label} constant value", ui["constant_var"].get())
         elif mode == MODE_RAMP:
@@ -350,6 +407,84 @@ class AxisEditorMixin:
                 )
         else:
             raise ValueError(f"{axis_label}: invalid mode '{mode}'.")
+
+        params.secondary_enabled = bool(ui["secondary_enabled_var"].get())
+        params.secondary_mode = str(ui["secondary_mode_var"].get()).strip().lower()
+        if params.secondary_enabled:
+            secondary_mode = params.secondary_mode
+            if secondary_mode == MODE_CONSTANT:
+                params.secondary_constant_value = self._parse_float(
+                    f"{axis_label} secondary constant value",
+                    ui["secondary_constant_var"].get(),
+                )
+            elif secondary_mode == MODE_RAMP:
+                params.secondary_ramp_start = self._parse_float(
+                    f"{axis_label} secondary ramp start",
+                    ui["secondary_ramp_start_var"].get(),
+                )
+                params.secondary_ramp_end = self._parse_float(
+                    f"{axis_label} secondary ramp end",
+                    ui["secondary_ramp_end_var"].get(),
+                )
+            elif secondary_mode == MODE_SINE:
+                params.secondary_amplitude = self._parse_float(
+                    f"{axis_label} secondary amplitude",
+                    ui["secondary_amplitude_var"].get(),
+                )
+                params.secondary_offset = self._parse_float(
+                    f"{axis_label} secondary offset",
+                    ui["secondary_offset_var"].get(),
+                )
+                params.secondary_phase_deg = self._parse_float(
+                    f"{axis_label} secondary phase",
+                    ui["secondary_phase_var"].get(),
+                )
+                params.secondary_frequency_hz = self._parse_float(
+                    f"{axis_label} secondary frequency",
+                    ui["secondary_frequency_var"].get(),
+                )
+                if params.secondary_amplitude < 0:
+                    raise ValueError(f"{axis_label}: secondary amplitude cannot be negative.")
+                if params.secondary_frequency_hz < 0:
+                    raise ValueError(f"{axis_label}: secondary frequency cannot be negative.")
+            elif secondary_mode == MODE_SWEEP:
+                params.secondary_amplitude = self._parse_float(
+                    f"{axis_label} secondary amplitude",
+                    ui["secondary_amplitude_var"].get(),
+                )
+                params.secondary_offset = self._parse_float(
+                    f"{axis_label} secondary offset",
+                    ui["secondary_offset_var"].get(),
+                )
+                params.secondary_phase_deg = self._parse_float(
+                    f"{axis_label} secondary phase",
+                    ui["secondary_phase_var"].get(),
+                )
+                params.secondary_sweep_start_hz = self._parse_float(
+                    f"{axis_label} secondary sweep start",
+                    ui["secondary_sweep_start_var"].get(),
+                )
+                params.secondary_sweep_end_hz = self._parse_float(
+                    f"{axis_label} secondary sweep end",
+                    ui["secondary_sweep_end_var"].get(),
+                )
+                if params.secondary_amplitude < 0:
+                    raise ValueError(f"{axis_label}: secondary amplitude cannot be negative.")
+                if params.secondary_sweep_start_hz < 0 or params.secondary_sweep_end_hz < 0:
+                    raise ValueError(f"{axis_label}: secondary sweep frequencies cannot be negative.")
+            elif secondary_mode == MODE_MULTISINE:
+                params.secondary_offset = self._parse_float(
+                    f"{axis_label} secondary offset",
+                    ui["secondary_offset_var"].get(),
+                )
+                params.secondary_multisine_components = str(ui["secondary_multisine_components_var"].get()).strip()
+                if not params.secondary_multisine_components:
+                    raise ValueError(
+                        f"{axis_label}: secondary multisine components cannot be empty "
+                        "(format: amplitude,frequency_hz,phase_deg; ...)."
+                    )
+            else:
+                raise ValueError(f"{axis_label}: invalid secondary mode '{secondary_mode}'.")
 
         return AxisMotionSection(duration_s=duration_s, params=params)
 
@@ -425,12 +560,20 @@ class AxisEditorMixin:
         ui = self.axis_ui[axis]
 
         self._suspend_events = True
-        if params.mode == MODE_CONSTANT:
-            ui["constant_var"].set(f"{params.constant_value:.6f}")
-        elif params.mode == MODE_RAMP:
-            ui["ramp_start_var"].set(f"{params.ramp_start:.6f}")
-        elif params.mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
-            ui["offset_var"].set(f"{params.offset:.6f}")
+        if params.secondary_enabled:
+            if params.secondary_mode == MODE_CONSTANT:
+                ui["secondary_constant_var"].set(f"{params.secondary_constant_value:.6f}")
+            elif params.secondary_mode == MODE_RAMP:
+                ui["secondary_ramp_start_var"].set(f"{params.secondary_ramp_start:.6f}")
+            elif params.secondary_mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
+                ui["secondary_offset_var"].set(f"{params.secondary_offset:.6f}")
+        else:
+            if params.mode == MODE_CONSTANT:
+                ui["constant_var"].set(f"{params.constant_value:.6f}")
+            elif params.mode == MODE_RAMP:
+                ui["ramp_start_var"].set(f"{params.ramp_start:.6f}")
+            elif params.mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
+                ui["offset_var"].set(f"{params.offset:.6f}")
         self._suspend_events = False
 
     def _on_axis_selection_changed(self, axis: str) -> None:
@@ -442,6 +585,20 @@ class AxisEditorMixin:
             refresh_fn()
 
     def _on_axis_mode_changed(self, axis: str) -> None:
+        if self._suspend_events:
+            return
+        self._update_axis_editor_visibility(axis)
+        if self._apply_axis_editor_to_model(axis, show_popup=False, refresh_ui=False):
+            self._schedule_refresh()
+
+    def _on_axis_secondary_toggled(self, axis: str) -> None:
+        if self._suspend_events:
+            return
+        self._update_axis_editor_visibility(axis)
+        if self._apply_axis_editor_to_model(axis, show_popup=False, refresh_ui=False):
+            self._schedule_refresh()
+
+    def _on_axis_secondary_mode_changed(self, axis: str) -> None:
         if self._suspend_events:
             return
         self._update_axis_editor_visibility(axis)

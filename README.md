@@ -16,6 +16,7 @@ The app previews position/velocity/acceleration/path, validates limits, supports
   - `ramp`
   - `constant`
   - `multisine` (sum of multiple sine terms `A,f,phi; ...`)
+  - Optional secondary waveform summed with the primary waveform (all mode combinations)
 - Easy/Expert editing modes
   - Easy: continuity auto-linking between consecutive sections
   - Expert: full manual control

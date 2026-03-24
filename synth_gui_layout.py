@@ -376,6 +376,18 @@ class LayoutMixin:
         ramp_start_var = tk.StringVar(value="0.0")
         ramp_end_var = tk.StringVar(value="0.01")
         multisine_components_var = tk.StringVar(value="0.01,1.0,0.0; 0.005,3.0,90.0")
+        secondary_enabled_var = tk.BooleanVar(value=False)
+        secondary_mode_var = tk.StringVar(value=MODE_SINE)
+        secondary_constant_var = tk.StringVar(value="0.0")
+        secondary_amplitude_var = tk.StringVar(value="0.0")
+        secondary_offset_var = tk.StringVar(value="0.0")
+        secondary_phase_var = tk.StringVar(value="0.0")
+        secondary_frequency_var = tk.StringVar(value="1.0")
+        secondary_sweep_start_var = tk.StringVar(value="0.5")
+        secondary_sweep_end_var = tk.StringVar(value="5.0")
+        secondary_ramp_start_var = tk.StringVar(value="0.0")
+        secondary_ramp_end_var = tk.StringVar(value="0.0")
+        secondary_multisine_components_var = tk.StringVar(value="0.0,1.0,0.0")
 
         duration_row = ttk.Frame(section_editor)
         duration_row.grid(row=0, column=0, sticky="ew", pady=1)
@@ -473,6 +485,48 @@ class LayoutMixin:
             entry_width=38,
         )
 
+        secondary_enabled_row = ttk.Frame(section_editor)
+        secondary_enabled_row.grid(row=12, column=0, sticky="ew", pady=(8, 1))
+        secondary_enabled_row.columnconfigure(0, weight=1)
+        secondary_check = ttk.Checkbutton(
+            secondary_enabled_row,
+            text="Add secondary waveform (sum with primary)",
+            variable=secondary_enabled_var,
+            command=lambda a=axis: self._on_axis_secondary_toggled(a),
+        )
+        secondary_check.grid(row=0, column=0, sticky="w")
+
+        secondary_mode_row = ttk.Frame(section_editor)
+        secondary_mode_row.grid(row=13, column=0, sticky="ew", pady=1)
+        secondary_mode_row.columnconfigure(1, weight=1)
+        ttk.Label(secondary_mode_row, text="Secondary mode").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        secondary_mode_combo = ttk.Combobox(
+            secondary_mode_row,
+            state="readonly",
+            values=[MODE_SINE, MODE_SWEEP, MODE_RAMP, MODE_CONSTANT, MODE_MULTISINE],
+            textvariable=secondary_mode_var,
+            width=12,
+        )
+        secondary_mode_combo.grid(row=0, column=1, sticky="ew")
+        secondary_mode_combo.bind("<<ComboboxSelected>>", lambda _event, a=axis: self._on_axis_secondary_mode_changed(a))
+
+        create_row(14, "secondary_constant_value", "Secondary constant (m)", secondary_constant_var)
+        create_row(15, "secondary_amplitude", "Secondary amplitude (m)", secondary_amplitude_var)
+        create_row(16, "secondary_offset", "Secondary offset (m)", secondary_offset_var)
+        create_row(17, "secondary_phase_deg", "Secondary phase (deg)", secondary_phase_var)
+        create_row(18, "secondary_frequency_hz", "Secondary frequency (Hz)", secondary_frequency_var)
+        create_row(19, "secondary_sweep_start_hz", "Secondary sweep start (Hz)", secondary_sweep_start_var)
+        create_row(20, "secondary_sweep_end_hz", "Secondary sweep end (Hz)", secondary_sweep_end_var)
+        create_row(21, "secondary_ramp_start", "Secondary ramp start (m)", secondary_ramp_start_var)
+        create_row(22, "secondary_ramp_end", "Secondary ramp end (m)", secondary_ramp_end_var)
+        create_row(
+            23,
+            "secondary_multisine_components",
+            "Secondary multisine (A,f,phi;...)",
+            secondary_multisine_components_var,
+            entry_width=38,
+        )
+
         transition_enabled_var = tk.BooleanVar(value=False)
         transition_duration_var = tk.StringVar(value=f"{DEFAULT_TRANSITION_DURATION_S:.3f}")
         transition_eat_var = tk.StringVar(value=EAT_AWAY_BOTH)
@@ -539,6 +593,22 @@ class LayoutMixin:
             "ramp_start_var": ramp_start_var,
             "ramp_end_var": ramp_end_var,
             "multisine_components_var": multisine_components_var,
+            "secondary_enabled_var": secondary_enabled_var,
+            "secondary_mode_var": secondary_mode_var,
+            "secondary_mode_combo": secondary_mode_combo,
+            "secondary_check": secondary_check,
+            "secondary_enabled_row": secondary_enabled_row,
+            "secondary_mode_row": secondary_mode_row,
+            "secondary_constant_var": secondary_constant_var,
+            "secondary_amplitude_var": secondary_amplitude_var,
+            "secondary_offset_var": secondary_offset_var,
+            "secondary_phase_var": secondary_phase_var,
+            "secondary_frequency_var": secondary_frequency_var,
+            "secondary_sweep_start_var": secondary_sweep_start_var,
+            "secondary_sweep_end_var": secondary_sweep_end_var,
+            "secondary_ramp_start_var": secondary_ramp_start_var,
+            "secondary_ramp_end_var": secondary_ramp_end_var,
+            "secondary_multisine_components_var": secondary_multisine_components_var,
             "rows": row_meta,
             "duration_row": duration_row,
             "mode_row": mode_row,
