@@ -18,7 +18,7 @@ class LayoutMixin:
     """Builds frames, panes, editors, and plots."""
 
     @staticmethod
-    def _bind_numeric_entry_behavior(entry: ttk.Entry) -> None:
+    def _bind_numeric_entry_behavior(entry: ttk.Entry, on_commit=None) -> None:
         def _select_all_on_focus(event: tk.Event) -> None:
             widget = event.widget
 
@@ -40,8 +40,15 @@ class LayoutMixin:
                 pass
             return "break"
 
+        def _commit(_event: tk.Event) -> None:
+            if callable(on_commit):
+                on_commit()
+
         entry.bind("<FocusIn>", _select_all_on_focus, add="+")
         entry.bind("<Control-a>", _select_all_shortcut, add="+")
+        entry.bind("<Return>", _commit, add="+")
+        entry.bind("<KP_Enter>", _commit, add="+")
+        entry.bind("<FocusOut>", _commit, add="+")
 
     def _build_layout(self) -> None:
         self.root.columnconfigure(0, weight=1)
@@ -190,7 +197,7 @@ class LayoutMixin:
         ttk.Label(general, text="Sample rate (Hz)").grid(row=1, column=0, sticky="w", padx=(0, 6), pady=2)
         sample_rate_entry = ttk.Entry(general, textvariable=self.sample_rate_var, width=14)
         sample_rate_entry.grid(row=1, column=1, sticky="ew", pady=2)
-        self._bind_numeric_entry_behavior(sample_rate_entry)
+        self._bind_numeric_entry_behavior(sample_rate_entry, on_commit=self._on_sample_rate_entry)
         ttk.Scale(
             general,
             from_=20.0,
@@ -198,7 +205,6 @@ class LayoutMixin:
             variable=self.sample_rate_scale_var,
             command=self._on_sample_rate_scale,
         ).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(2, 2))
-        self.sample_rate_var.trace_add("write", lambda *_: self._on_sample_rate_entry())
 
         self._build_limits_frame(parent, row_index=1)
         warning_frame = ttk.LabelFrame(parent, text="Warnings", padding=6)
@@ -277,8 +283,7 @@ class LayoutMixin:
                 check.grid(row=row, column=0, sticky="w", pady=1)
                 entry = ttk.Entry(axis_frame, textvariable=self.limit_vars[axis][value_key], width=12)
                 entry.grid(row=row, column=1, sticky="ew", pady=1, padx=(6, 0))
-                self._bind_numeric_entry_behavior(entry)
-                self.limit_vars[axis][value_key].trace_add("write", lambda *_: self._schedule_refresh())
+                self._bind_numeric_entry_behavior(entry, on_commit=self._schedule_refresh)
 
     def _build_axis_workspace(self, parent: ttk.Frame) -> None:
         axes_pane = ttk.Panedwindow(parent, orient="horizontal")
@@ -376,7 +381,7 @@ class LayoutMixin:
         ttk.Label(duration_row, text="Duration (s)").grid(row=0, column=0, sticky="w", padx=(0, 6))
         duration_entry = ttk.Entry(duration_row, textvariable=duration_var, width=12)
         duration_entry.grid(row=0, column=1, sticky="ew")
-        self._bind_numeric_entry_behavior(duration_entry)
+        self._bind_numeric_entry_behavior(duration_entry, on_commit=lambda a=axis: self._on_duration_entry(a))
         ttk.Scale(
             duration_row,
             from_=0.05,
@@ -384,7 +389,6 @@ class LayoutMixin:
             variable=duration_scale_var,
             command=lambda value, a=axis: self._on_duration_scale(a, value),
         ).grid(row=1, column=0, columnspan=2, sticky="ew", pady=(2, 4))
-        duration_var.trace_add("write", lambda *_args, a=axis: self._on_duration_entry(a))
 
         mode_row = ttk.Frame(section_editor)
         mode_row.grid(row=1, column=0, sticky="ew", pady=1)
@@ -418,7 +422,11 @@ class LayoutMixin:
             label_widget.grid(row=0, column=0, sticky="w", padx=(0, 6))
             entry_widget = ttk.Entry(row_frame, textvariable=variable, width=12)
             entry_widget.grid(row=0, column=1, sticky="ew")
-            self._bind_numeric_entry_behavior(entry_widget)
+            if field_key == "amplitude":
+                on_commit = lambda a=axis: self._on_amplitude_entry(a)
+            else:
+                on_commit = lambda a=axis: self._on_axis_editor_changed(a)
+            self._bind_numeric_entry_behavior(entry_widget, on_commit=on_commit)
             scale_widget = None
             if slider_var is not None:
                 row_frame.columnconfigure(2, weight=1)
@@ -455,21 +463,6 @@ class LayoutMixin:
         create_row(9, "ramp_start", "Ramp start (m)", ramp_start_var)
         create_row(10, "ramp_end", "Ramp end (m)", ramp_end_var)
 
-        section_trace_vars = [
-            constant_var,
-            amplitude_var,
-            offset_var,
-            phase_var,
-            frequency_var,
-            sweep_start_var,
-            sweep_end_var,
-            ramp_start_var,
-            ramp_end_var,
-        ]
-        for variable in section_trace_vars:
-            variable.trace_add("write", lambda *_args, a=axis: self._on_axis_editor_changed(a))
-        amplitude_var.trace_add("write", lambda *_args, a=axis: self._on_amplitude_entry(a))
-
         transition_enabled_var = tk.BooleanVar(value=False)
         transition_duration_var = tk.StringVar(value=f"{DEFAULT_TRANSITION_DURATION_S:.3f}")
         transition_eat_var = tk.StringVar(value=EAT_AWAY_BOTH)
@@ -489,8 +482,7 @@ class LayoutMixin:
         ttk.Label(dur_row, text="Transition duration (s)").grid(row=0, column=0, sticky="w", padx=(0, 6))
         dur_entry = ttk.Entry(dur_row, textvariable=transition_duration_var, width=12)
         dur_entry.grid(row=0, column=1, sticky="ew")
-        self._bind_numeric_entry_behavior(dur_entry)
-        transition_duration_var.trace_add("write", lambda *_args, a=axis: self._on_transition_editor_changed(a))
+        self._bind_numeric_entry_behavior(dur_entry, on_commit=lambda a=axis: self._on_transition_editor_changed(a))
 
         eat_row = ttk.Frame(transition_editor)
         eat_row.grid(row=2, column=0, sticky="ew", pady=1)
