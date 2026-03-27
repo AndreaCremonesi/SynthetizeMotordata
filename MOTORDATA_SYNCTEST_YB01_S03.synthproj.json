@@ -1,0 +1,215 @@
+{
+  "schema_version": 1,
+  "saved_utc": "2026-03-27T15:09:59.932346+00:00",
+  "recipe": {
+    "sample_rate_hz": 500.0,
+    "y_pipeline": {
+      "sections": [
+        {
+          "duration_s": 3.0,
+          "params": {
+            "mode": "constant",
+            "amplitude": 0.01,
+            "offset": 0.0,
+            "phase_deg": 0.0,
+            "frequency_hz": 1.0,
+            "sweep_type": "linear",
+            "sweep_start_hz": 0.5,
+            "sweep_end_hz": 5.0,
+            "ramp_start": 0.0,
+            "ramp_end": 0.01,
+            "ramp_speed_mps": 0.002,
+            "ramp_lock_speed": false,
+            "constant_value": 3.0,
+            "multisine_components": "0.01,1.0,0.0; 0.005,3.0,90.0",
+            "secondary_enabled": false,
+            "secondary_mode": "sine",
+            "secondary_amplitude": 0.0,
+            "secondary_offset": 0.0,
+            "secondary_phase_deg": 0.0,
+            "secondary_frequency_hz": 1.0,
+            "secondary_sweep_type": "linear",
+            "secondary_sweep_start_hz": 0.5,
+            "secondary_sweep_end_hz": 5.0,
+            "secondary_ramp_start": 0.0,
+            "secondary_ramp_end": 0.0,
+            "secondary_constant_value": 0.0,
+            "secondary_multisine_components": "0.0,1.0,0.0"
+          },
+          "is_auto_fill": false
+        },
+        {
+          "duration_s": 40.0,
+          "params": {
+            "mode": "ramp",
+            "amplitude": 0.01,
+            "offset": 3.0,
+            "phase_deg": 0.0,
+            "frequency_hz": 1.0,
+            "sweep_type": "linear",
+            "sweep_start_hz": 0.5,
+            "sweep_end_hz": 5.0,
+            "ramp_start": 3.0,
+            "ramp_end": 15.0,
+            "ramp_speed_mps": 0.3,
+            "ramp_lock_speed": true,
+            "constant_value": 0.0,
+            "multisine_components": "0.01,1.0,0.0; 0.005,3.0,90.0",
+            "secondary_enabled": false,
+            "secondary_mode": "sine",
+            "secondary_amplitude": 0.0,
+            "secondary_offset": 0.0,
+            "secondary_phase_deg": 0.0,
+            "secondary_frequency_hz": 1.0,
+            "secondary_sweep_type": "linear",
+            "secondary_sweep_start_hz": 0.5,
+            "secondary_sweep_end_hz": 5.0,
+            "secondary_ramp_start": 0.0,
+            "secondary_ramp_end": 0.0,
+            "secondary_constant_value": 0.0,
+            "secondary_multisine_components": "0.0,1.0,0.0"
+          },
+          "is_auto_fill": false
+        },
+        {
+          "duration_s": 3.0,
+          "params": {
+            "mode": "constant",
+            "amplitude": 0.01,
+            "offset": 14.999,
+            "phase_deg": 0.0,
+            "frequency_hz": 1.0,
+            "sweep_type": "linear",
+            "sweep_start_hz": 0.5,
+            "sweep_end_hz": 5.0,
+            "ramp_start": 0.0,
+            "ramp_end": 0.01,
+            "ramp_speed_mps": 0.002,
+            "ramp_lock_speed": false,
+            "constant_value": 14.999,
+            "multisine_components": "0.01,1.0,0.0; 0.005,3.0,90.0",
+            "secondary_enabled": false,
+            "secondary_mode": "sine",
+            "secondary_amplitude": 0.0,
+            "secondary_offset": 0.0,
+            "secondary_phase_deg": 0.0,
+            "secondary_frequency_hz": 1.0,
+            "secondary_sweep_type": "linear",
+            "secondary_sweep_start_hz": 0.5,
+            "secondary_sweep_end_hz": 5.0,
+            "secondary_ramp_start": 0.0,
+            "secondary_ramp_end": 0.0,
+            "secondary_constant_value": 0.0,
+            "secondary_multisine_components": "0.0,1.0,0.0"
+          },
+          "is_auto_fill": false
+        }
+      ],
+      "transitions": [
+        {
+          "enabled": true,
+          "duration_s": 0.5,
+          "eat_away_mode": "both",
+          "auto_added": false,
+          "status": "resolved"
+        },
+        {
+          "enabled": true,
+          "duration_s": 0.5,
+          "eat_away_mode": "both",
+          "auto_added": false,
+          "status": "resolved"
+        }
+      ]
+    },
+    "z_pipeline": {
+      "sections": [
+        {
+          "duration_s": 46.0,
+          "params": {
+            "mode": "constant",
+            "amplitude": 0.01,
+            "offset": 0.0,
+            "phase_deg": 0.0,
+            "frequency_hz": 1.0,
+            "sweep_type": "linear",
+            "sweep_start_hz": 0.5,
+            "sweep_end_hz": 5.0,
+            "ramp_start": 0.0,
+            "ramp_end": 0.01,
+            "ramp_speed_mps": 0.002,
+            "ramp_lock_speed": false,
+            "constant_value": 0.5,
+            "multisine_components": "0.01,1.0,0.0; 0.005,3.0,90.0",
+            "secondary_enabled": false,
+            "secondary_mode": "sine",
+            "secondary_amplitude": 0.0,
+            "secondary_offset": 0.0,
+            "secondary_phase_deg": 0.0,
+            "secondary_frequency_hz": 1.0,
+            "secondary_sweep_type": "linear",
+            "secondary_sweep_start_hz": 0.5,
+            "secondary_sweep_end_hz": 5.0,
+            "secondary_ramp_start": 0.0,
+            "secondary_ramp_end": 0.0,
+            "secondary_constant_value": 0.0,
+            "secondary_multisine_components": "0.0,1.0,0.0"
+          },
+          "is_auto_fill": false
+        }
+      ],
+      "transitions": []
+    }
+  },
+  "limits": {
+    "y": {
+      "enable_min_value": true,
+      "min_value": 3.0,
+      "enable_max_value": true,
+      "max_value": 16.0,
+      "enable_max_speed": true,
+      "max_speed": 4.0,
+      "enable_max_acceleration": true,
+      "max_acceleration": 15.0,
+      "enable_jump_threshold": true,
+      "max_jump": 0.01
+    },
+    "z": {
+      "enable_min_value": true,
+      "min_value": 0.4,
+      "enable_max_value": true,
+      "max_value": 1.2,
+      "enable_max_speed": true,
+      "max_speed": 4.0,
+      "enable_max_acceleration": true,
+      "max_acceleration": 15.0,
+      "enable_jump_threshold": true,
+      "max_jump": 0.01
+    }
+  },
+  "ui": {
+    "edit_mode": "Expert",
+    "sample_rate_text": "500.000",
+    "output_name": "MOTORDATA_SYNCTEST_YB01_S03.csv",
+    "window_geometry": "2560x1369+-308+-1448",
+    "selected_rows": {
+      "y": {
+        "type": "none",
+        "index": -1
+      },
+      "z": {
+        "type": "none",
+        "index": -1
+      }
+    },
+    "selected_plot_tab": 0,
+    "position_plot_split": true,
+    "sash_positions": {
+      "main": 736,
+      "controls": 397,
+      "axes": 345,
+      "axis_y": 497,
+      "axis_z": 497
+    }
+  }
+}

@@ -12,8 +12,9 @@ The app previews position/velocity/acceleration/path, validates limits, supports
 - Independent Y and Z section pipelines
 - Section waveform modes
   - `sine`
-  - `sweep` (linear frequency sweep in Hz)
+  - `sweep` (linear or logarithmic frequency sweep in Hz)
   - `ramp`
+    - Optional ramp speed + `Lock speed` coupling (duration <-> end position)
   - `constant`
   - `multisine` (sum of multiple sine terms `A,f,phi; ...`)
   - Optional secondary waveform summed with the primary waveform (all mode combinations)
@@ -24,8 +25,12 @@ The app previews position/velocity/acceleration/path, validates limits, supports
   - Warning-driven boundary status (`active`/`resolved`)
   - Optional smoothing (`smoothen transition`) with eat-away modes (`left`, `right`, `both`)
   - Quintic C2 blending to match value, velocity, and acceleration at both ends
+- Pipeline section copy/paste
+  - Multi-select sections with Ctrl+Click in a pipeline tree
+  - Copy/paste within the same axis or across Y/Z axes
 - Live plots
   - Position vs time
+    - Optional split view (`Split Y/Z` / `Unite Y/Z`)
   - Velocity and acceleration
   - Y-Z path
 - Optional warning limits (per axis)
@@ -45,7 +50,11 @@ The app previews position/velocity/acceleration/path, validates limits, supports
   - Recipe, limits, UI selections, geometry, and pane layout are restored
   - Project format is `*.synthproj.json`
 - Header menu actions
-  - Top window row contains `Save Project`, `Load Project`, `Export`, and `Export As...`
+  - Top window row contains `Save Project`, `Save Project As...`, `Load Project`, `Load CSV`, `Close CSV Preview`, `Export`, and `Export As...`
+- External CSV visualization
+  - Load an existing trajectory CSV and use the app as a viewer (position, dynamics, Y-Z path, limits warnings)
+  - While CSV viewer mode is active, waveform/pipeline editing controls are disabled
+  - Use `Close CSV Preview` to return to normal synthesis mode
 - Small-screen usability
   - Left controls panel is scrollable (wheel + scrollbar), while plots remain fixed
 
@@ -104,7 +113,7 @@ source .venv/bin/activate
 6. If one axis is shorter, review the highlighted `auto-fill` section.
 7. Add/adjust manual sections; auto-fill resizes or disappears once lengths match.
 8. Check plots (position, dynamics, Y-Z path).
-9. Use the top header row for `Save Project`, `Load Project`, `Export`, and `Export As...`.
+9. Use the top header row for `Save Project`, `Save Project As...`, `Load Project`, `Load CSV`, `Close CSV Preview`, `Export`, and `Export As...`.
 
 ## Easy vs Expert
 

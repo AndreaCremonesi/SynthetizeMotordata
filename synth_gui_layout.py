@@ -170,13 +170,23 @@ class LayoutMixin:
         ttk.Button(parent, text="Save Project", command=self._on_save_project).grid(
             row=0, column=4, padx=(0, 4)
         )
-        ttk.Button(parent, text="Load Project", command=self._on_load_project).grid(
+        ttk.Button(parent, text="Save Project As...", command=self._on_save_project_as).grid(
             row=0, column=5, padx=(0, 4)
         )
-        ttk.Button(parent, text="Export", command=self._on_save_inline).grid(
+        ttk.Button(parent, text="Load Project", command=self._on_load_project).grid(
             row=0, column=6, padx=(0, 4)
         )
-        ttk.Button(parent, text="Export As...", command=self._on_save_as).grid(row=0, column=7)
+        ttk.Button(parent, text="Load CSV", command=self._on_load_trajectory_csv).grid(
+            row=0, column=7, padx=(0, 4)
+        )
+        close_csv_button = ttk.Button(parent, text="Close CSV Preview", command=self._on_close_csv_preview)
+        close_csv_button.grid(row=0, column=8, padx=(0, 4))
+        close_csv_button.configure(state="disabled")
+        self.close_csv_preview_button = close_csv_button
+        ttk.Button(parent, text="Export", command=self._on_save_inline).grid(
+            row=0, column=9, padx=(0, 4)
+        )
+        ttk.Button(parent, text="Export As...", command=self._on_save_as).grid(row=0, column=10)
 
     def _build_top_controls(self, parent: ttk.Frame) -> None:
         general = ttk.LabelFrame(parent, text="Global Settings", padding=8)
@@ -261,11 +271,11 @@ class LayoutMixin:
         }
 
         definitions = [
-            ("enable_min_value", "min_value", "Min value"),
-            ("enable_max_value", "max_value", "Max value"),
-            ("enable_max_speed", "max_speed", "Max speed"),
-            ("enable_max_acceleration", "max_acceleration", "Max acceleration"),
-            ("enable_jump_threshold", "max_jump", "Max jump"),
+            ("enable_min_value", "min_value", "Min value (m)"),
+            ("enable_max_value", "max_value", "Max value (m)"),
+            ("enable_max_speed", "max_speed", "Max speed (m/s)"),
+            ("enable_max_acceleration", "max_acceleration", "Max acceleration (m/s^2)"),
+            ("enable_jump_threshold", "max_jump", "Max jump (m)"),
         ]
 
         for col, axis in enumerate(("y", "z")):
@@ -321,7 +331,7 @@ class LayoutMixin:
             section_frame,
             columns=("item", "duration", "details"),
             show="headings",
-            selectmode="browse",
+            selectmode="extended",
             height=10,
         )
         tree.heading("item", text="Item")
@@ -333,25 +343,41 @@ class LayoutMixin:
         tree.grid(row=1, column=0, sticky="nsew")
         tree.bind("<<TreeviewSelect>>", lambda _event, a=axis: self._on_axis_selection_changed(a))
         tree.bind("<Button-1>", lambda event, a=axis: self._on_axis_tree_click(a, event), add="+")
+        tree.bind("<Control-c>", lambda _event, a=axis: self._on_axis_copy_shortcut(a))
+        tree.bind("<Control-C>", lambda _event, a=axis: self._on_axis_copy_shortcut(a))
+        tree.bind("<Control-v>", lambda _event, a=axis: self._on_axis_paste_shortcut(a))
+        tree.bind("<Control-V>", lambda _event, a=axis: self._on_axis_paste_shortcut(a))
         tree.tag_configure(TREE_TAG_TRANSITION_ACTIVE, background="#ffe066")
         tree.tag_configure(TREE_TAG_TRANSITION_RESOLVED, background="#fff3b0")
         tree.tag_configure(TREE_TAG_AUTO_FILL_SECTION, background="#d9edf7")
 
         buttons = ttk.Frame(section_frame)
         buttons.grid(row=2, column=0, sticky="ew", pady=(4, 0))
-        for i in range(4):
+        for i in range(6):
             buttons.columnconfigure(i, weight=1)
-        ttk.Button(buttons, text="Add", command=lambda a=axis: self._add_axis_section(a)).grid(
+        add_button = ttk.Button(buttons, text="Add", command=lambda a=axis: self._add_axis_section(a))
+        add_button.grid(
             row=0, column=0, sticky="ew", padx=(0, 3)
         )
-        ttk.Button(buttons, text="Delete", command=lambda a=axis: self._delete_axis_section(a)).grid(
+        delete_button = ttk.Button(buttons, text="Delete", command=lambda a=axis: self._delete_axis_section(a))
+        delete_button.grid(
             row=0, column=1, sticky="ew", padx=3
         )
-        ttk.Button(buttons, text="Up", command=lambda a=axis: self._move_axis_section(a, -1)).grid(
+        up_button = ttk.Button(buttons, text="Up", command=lambda a=axis: self._move_axis_section(a, -1))
+        up_button.grid(
             row=0, column=2, sticky="ew", padx=3
         )
-        ttk.Button(buttons, text="Down", command=lambda a=axis: self._move_axis_section(a, 1)).grid(
+        down_button = ttk.Button(buttons, text="Down", command=lambda a=axis: self._move_axis_section(a, 1))
+        down_button.grid(
             row=0, column=3, sticky="ew", padx=(3, 0)
+        )
+        copy_button = ttk.Button(buttons, text="Copy", command=lambda a=axis: self._copy_axis_sections(a))
+        copy_button.grid(
+            row=0, column=4, sticky="ew", padx=(3, 0)
+        )
+        paste_button = ttk.Button(buttons, text="Paste", command=lambda a=axis: self._paste_axis_sections(a))
+        paste_button.grid(
+            row=0, column=5, sticky="ew", padx=(3, 0)
         )
 
         section_editor = ttk.Frame(editor_frame)
@@ -371,10 +397,13 @@ class LayoutMixin:
         offset_var = tk.StringVar(value="0.0")
         phase_var = tk.StringVar(value="0.0")
         frequency_var = tk.StringVar(value="1.0")
+        sweep_type_var = tk.StringVar(value=SWEEP_TYPE_LINEAR)
         sweep_start_var = tk.StringVar(value="0.5")
         sweep_end_var = tk.StringVar(value="5.0")
         ramp_start_var = tk.StringVar(value="0.0")
         ramp_end_var = tk.StringVar(value="0.01")
+        ramp_speed_var = tk.StringVar(value="0.002")
+        ramp_lock_speed_var = tk.BooleanVar(value=False)
         multisine_components_var = tk.StringVar(value="0.01,1.0,0.0; 0.005,3.0,90.0")
         secondary_enabled_var = tk.BooleanVar(value=False)
         secondary_mode_var = tk.StringVar(value=MODE_SINE)
@@ -383,6 +412,7 @@ class LayoutMixin:
         secondary_offset_var = tk.StringVar(value="0.0")
         secondary_phase_var = tk.StringVar(value="0.0")
         secondary_frequency_var = tk.StringVar(value="1.0")
+        secondary_sweep_type_var = tk.StringVar(value=SWEEP_TYPE_LINEAR)
         secondary_sweep_start_var = tk.StringVar(value="0.5")
         secondary_sweep_end_var = tk.StringVar(value="5.0")
         secondary_ramp_start_var = tk.StringVar(value="0.0")
@@ -439,6 +469,8 @@ class LayoutMixin:
             entry_widget.grid(row=0, column=1, sticky="ew")
             if field_key == "amplitude":
                 on_commit = lambda a=axis: self._on_amplitude_entry(a)
+            elif field_key in {"ramp_start", "ramp_end", "ramp_speed"}:
+                on_commit = lambda a=axis, f=field_key: self._on_ramp_value_entry(a, f)
             else:
                 on_commit = lambda a=axis: self._on_axis_editor_changed(a)
             self._bind_numeric_entry_behavior(entry_widget, on_commit=on_commit)
@@ -460,6 +492,35 @@ class LayoutMixin:
                 "scale": scale_widget,
             }
 
+        def create_combo_row(
+            row_idx: int,
+            field_key: str,
+            label_text: str,
+            variable: tk.StringVar,
+            values: List[str],
+            combo_width: int = 12,
+        ) -> None:
+            row_frame = ttk.Frame(section_editor)
+            row_frame.grid(row=row_idx, column=0, sticky="ew", pady=1)
+            row_frame.columnconfigure(1, weight=1)
+            label_widget = ttk.Label(row_frame, text=label_text)
+            label_widget.grid(row=0, column=0, sticky="w", padx=(0, 6))
+            combo_widget = ttk.Combobox(
+                row_frame,
+                state="readonly",
+                values=values,
+                textvariable=variable,
+                width=combo_width,
+            )
+            combo_widget.grid(row=0, column=1, sticky="ew")
+            combo_widget.bind("<<ComboboxSelected>>", lambda _event, a=axis: self._on_axis_editor_changed(a))
+            row_meta[field_key] = {
+                "frame": row_frame,
+                "label": label_widget,
+                "entry": combo_widget,
+                "scale": None,
+            }
+
         create_row(2, "constant_value", "Constant value (m)", constant_var)
         create_row(
             3,
@@ -473,12 +534,24 @@ class LayoutMixin:
         create_row(4, "offset", "Offset (m)", offset_var)
         create_row(5, "phase_deg", "Start phase (deg)", phase_var)
         create_row(6, "frequency_hz", "Frequency (Hz)", frequency_var)
-        create_row(7, "sweep_start_hz", "Sweep start (Hz)", sweep_start_var)
-        create_row(8, "sweep_end_hz", "Sweep end (Hz)", sweep_end_var)
-        create_row(9, "ramp_start", "Ramp start (m)", ramp_start_var)
-        create_row(10, "ramp_end", "Ramp end (m)", ramp_end_var)
+        create_combo_row(7, "sweep_type", "Sweep type", sweep_type_var, [SWEEP_TYPE_LINEAR, SWEEP_TYPE_LOG])
+        create_row(8, "sweep_start_hz", "Sweep start (Hz)", sweep_start_var)
+        create_row(9, "sweep_end_hz", "Sweep end (Hz)", sweep_end_var)
+        create_row(10, "ramp_start", "Ramp start (m)", ramp_start_var)
+        create_row(11, "ramp_end", "Ramp end (m)", ramp_end_var)
+        create_row(12, "ramp_speed", "Ramp speed (m/s)", ramp_speed_var)
+        ramp_lock_row = ttk.Frame(section_editor)
+        ramp_lock_row.grid(row=13, column=0, sticky="ew", pady=1)
+        ramp_lock_row.columnconfigure(0, weight=1)
+        ramp_lock_check = ttk.Checkbutton(
+            ramp_lock_row,
+            text="Lock speed",
+            variable=ramp_lock_speed_var,
+            command=lambda a=axis: self._on_ramp_lock_toggled(a),
+        )
+        ramp_lock_check.grid(row=0, column=0, sticky="w")
         create_row(
-            11,
+            14,
             "multisine_components",
             "Multisine terms (A,f,phi;...)",
             multisine_components_var,
@@ -486,7 +559,7 @@ class LayoutMixin:
         )
 
         secondary_enabled_row = ttk.Frame(section_editor)
-        secondary_enabled_row.grid(row=12, column=0, sticky="ew", pady=(8, 1))
+        secondary_enabled_row.grid(row=15, column=0, sticky="ew", pady=(8, 1))
         secondary_enabled_row.columnconfigure(0, weight=1)
         secondary_check = ttk.Checkbutton(
             secondary_enabled_row,
@@ -497,7 +570,7 @@ class LayoutMixin:
         secondary_check.grid(row=0, column=0, sticky="w")
 
         secondary_mode_row = ttk.Frame(section_editor)
-        secondary_mode_row.grid(row=13, column=0, sticky="ew", pady=1)
+        secondary_mode_row.grid(row=16, column=0, sticky="ew", pady=1)
         secondary_mode_row.columnconfigure(1, weight=1)
         ttk.Label(secondary_mode_row, text="Secondary mode").grid(row=0, column=0, sticky="w", padx=(0, 6))
         secondary_mode_combo = ttk.Combobox(
@@ -510,17 +583,24 @@ class LayoutMixin:
         secondary_mode_combo.grid(row=0, column=1, sticky="ew")
         secondary_mode_combo.bind("<<ComboboxSelected>>", lambda _event, a=axis: self._on_axis_secondary_mode_changed(a))
 
-        create_row(14, "secondary_constant_value", "Secondary constant (m)", secondary_constant_var)
-        create_row(15, "secondary_amplitude", "Secondary amplitude (m)", secondary_amplitude_var)
-        create_row(16, "secondary_offset", "Secondary offset (m)", secondary_offset_var)
-        create_row(17, "secondary_phase_deg", "Secondary phase (deg)", secondary_phase_var)
-        create_row(18, "secondary_frequency_hz", "Secondary frequency (Hz)", secondary_frequency_var)
-        create_row(19, "secondary_sweep_start_hz", "Secondary sweep start (Hz)", secondary_sweep_start_var)
-        create_row(20, "secondary_sweep_end_hz", "Secondary sweep end (Hz)", secondary_sweep_end_var)
-        create_row(21, "secondary_ramp_start", "Secondary ramp start (m)", secondary_ramp_start_var)
-        create_row(22, "secondary_ramp_end", "Secondary ramp end (m)", secondary_ramp_end_var)
+        create_row(17, "secondary_constant_value", "Secondary constant (m)", secondary_constant_var)
+        create_row(18, "secondary_amplitude", "Secondary amplitude (m)", secondary_amplitude_var)
+        create_row(19, "secondary_offset", "Secondary offset (m)", secondary_offset_var)
+        create_row(20, "secondary_phase_deg", "Secondary phase (deg)", secondary_phase_var)
+        create_row(21, "secondary_frequency_hz", "Secondary frequency (Hz)", secondary_frequency_var)
+        create_combo_row(
+            22,
+            "secondary_sweep_type",
+            "Secondary sweep type",
+            secondary_sweep_type_var,
+            [SWEEP_TYPE_LINEAR, SWEEP_TYPE_LOG],
+        )
+        create_row(23, "secondary_sweep_start_hz", "Secondary sweep start (Hz)", secondary_sweep_start_var)
+        create_row(24, "secondary_sweep_end_hz", "Secondary sweep end (Hz)", secondary_sweep_end_var)
+        create_row(25, "secondary_ramp_start", "Secondary ramp start (m)", secondary_ramp_start_var)
+        create_row(26, "secondary_ramp_end", "Secondary ramp end (m)", secondary_ramp_end_var)
         create_row(
-            23,
+            27,
             "secondary_multisine_components",
             "Secondary multisine (A,f,phi;...)",
             secondary_multisine_components_var,
@@ -573,6 +653,12 @@ class LayoutMixin:
         self.axis_ui[axis] = {
             "axis_pane": axis_pane,
             "tree": tree,
+            "add_button": add_button,
+            "delete_button": delete_button,
+            "up_button": up_button,
+            "down_button": down_button,
+            "copy_button": copy_button,
+            "paste_button": paste_button,
             "row_map": {},
             "total_var": total_var,
             "section_editor": section_editor,
@@ -588,10 +674,15 @@ class LayoutMixin:
             "offset_var": offset_var,
             "phase_var": phase_var,
             "frequency_var": frequency_var,
+            "sweep_type_var": sweep_type_var,
             "sweep_start_var": sweep_start_var,
             "sweep_end_var": sweep_end_var,
             "ramp_start_var": ramp_start_var,
             "ramp_end_var": ramp_end_var,
+            "ramp_speed_var": ramp_speed_var,
+            "ramp_lock_speed_var": ramp_lock_speed_var,
+            "ramp_lock_row": ramp_lock_row,
+            "ramp_lock_check": ramp_lock_check,
             "multisine_components_var": multisine_components_var,
             "secondary_enabled_var": secondary_enabled_var,
             "secondary_mode_var": secondary_mode_var,
@@ -604,6 +695,7 @@ class LayoutMixin:
             "secondary_offset_var": secondary_offset_var,
             "secondary_phase_var": secondary_phase_var,
             "secondary_frequency_var": secondary_frequency_var,
+            "secondary_sweep_type_var": secondary_sweep_type_var,
             "secondary_sweep_start_var": secondary_sweep_start_var,
             "secondary_sweep_end_var": secondary_sweep_end_var,
             "secondary_ramp_start_var": secondary_ramp_start_var,
@@ -638,14 +730,28 @@ class LayoutMixin:
         notebook.add(tab_dyn, text="Velocity & Acceleration")
         notebook.add(tab_path, text="Y-Z Path")
 
-        for tab in (tab_pos, tab_dyn, tab_path):
+        for tab in (tab_dyn, tab_path):
             tab.columnconfigure(0, weight=1)
             tab.rowconfigure(0, weight=1)
+        tab_pos.columnconfigure(0, weight=1)
+        tab_pos.rowconfigure(1, weight=1)
+
+        pos_controls = ttk.Frame(tab_pos, padding=(4, 4))
+        pos_controls.grid(row=0, column=0, sticky="ew")
+        pos_controls.columnconfigure(0, weight=1)
+        self.position_split_button = ttk.Button(
+            pos_controls,
+            text="Split Y/Z",
+            command=self._on_toggle_position_plot_split,
+        )
+        self.position_split_button.grid(row=0, column=1, sticky="e")
 
         self.fig_pos = Figure(figsize=(11.5, 8.0), dpi=100)
         self.ax_pos = self.fig_pos.add_subplot(111)
+        self.ax_pos_y = None
+        self.ax_pos_z = None
         self.canvas_pos = FigureCanvasTkAgg(self.fig_pos, master=tab_pos)
-        self.canvas_pos.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        self.canvas_pos.get_tk_widget().grid(row=1, column=0, sticky="nsew")
 
         self.fig_dyn = Figure(figsize=(11.5, 8.0), dpi=100)
         self.ax_vel = self.fig_dyn.add_subplot(211)

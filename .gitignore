@@ -6,6 +6,7 @@ __pycache__/
 
 # Generated exports
 synth_motordata*.csv
+*.csv
 
 # IDE/editor
 .vscode/

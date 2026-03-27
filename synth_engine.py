@@ -43,6 +43,9 @@ MODE_RAMP = "ramp"
 MODE_CONSTANT = "constant"
 MODE_MULTISINE = "multisine"
 VALID_MODES = (MODE_SINE, MODE_SWEEP, MODE_RAMP, MODE_CONSTANT, MODE_MULTISINE)
+SWEEP_TYPE_LINEAR = "linear"
+SWEEP_TYPE_LOG = "logarithmic"
+VALID_SWEEP_TYPES = (SWEEP_TYPE_LINEAR, SWEEP_TYPE_LOG)
 
 DEFAULT_MULTISINE_COMPONENTS = "0.01,1.0,0.0; 0.005,3.0,90.0"
 DEFAULT_SECONDARY_MULTISINE_COMPONENTS = "0.0,1.0,0.0"
@@ -66,10 +69,13 @@ class AxisSectionParams:
     offset: float = 0.0
     phase_deg: float = 0.0
     frequency_hz: float = 1.0
+    sweep_type: str = SWEEP_TYPE_LINEAR
     sweep_start_hz: float = 0.5
     sweep_end_hz: float = 5.0
     ramp_start: float = 0.0
     ramp_end: float = 0.01
+    ramp_speed_mps: float = 0.002
+    ramp_lock_speed: bool = False
     constant_value: float = 0.0
     multisine_components: str = DEFAULT_MULTISINE_COMPONENTS
     secondary_enabled: bool = False
@@ -78,6 +84,7 @@ class AxisSectionParams:
     secondary_offset: float = 0.0
     secondary_phase_deg: float = 0.0
     secondary_frequency_hz: float = 1.0
+    secondary_sweep_type: str = SWEEP_TYPE_LINEAR
     secondary_sweep_start_hz: float = 0.5
     secondary_sweep_end_hz: float = 5.0
     secondary_ramp_start: float = 0.0
@@ -230,6 +237,7 @@ def _validate_axis_params(axis_label: str, params: AxisSectionParams) -> None:
         mode=params.mode,
         amplitude=params.amplitude,
         frequency_hz=params.frequency_hz,
+        sweep_type=params.sweep_type,
         sweep_start_hz=params.sweep_start_hz,
         sweep_end_hz=params.sweep_end_hz,
         multisine_components=params.multisine_components,
@@ -241,6 +249,7 @@ def _validate_axis_params(axis_label: str, params: AxisSectionParams) -> None:
             mode=params.secondary_mode,
             amplitude=params.secondary_amplitude,
             frequency_hz=params.secondary_frequency_hz,
+            sweep_type=params.secondary_sweep_type,
             sweep_start_hz=params.secondary_sweep_start_hz,
             sweep_end_hz=params.secondary_sweep_end_hz,
             multisine_components=params.secondary_multisine_components,
@@ -253,6 +262,7 @@ def _validate_waveform_params(
     mode: str,
     amplitude: float,
     frequency_hz: float,
+    sweep_type: str,
     sweep_start_hz: float,
     sweep_end_hz: float,
     multisine_components: str,
@@ -266,6 +276,16 @@ def _validate_waveform_params(
         raise ValueError(f"{axis_label} ({waveform_label}): frequency cannot be negative.")
     if sweep_start_hz < 0 or sweep_end_hz < 0:
         raise ValueError(f"{axis_label} ({waveform_label}): sweep frequencies cannot be negative.")
+    if mode == MODE_SWEEP:
+        if sweep_type not in VALID_SWEEP_TYPES:
+            allowed = ", ".join(VALID_SWEEP_TYPES)
+            raise ValueError(
+                f"{axis_label} ({waveform_label}): invalid sweep type '{sweep_type}' (allowed: {allowed})."
+            )
+        if sweep_type == SWEEP_TYPE_LOG and (sweep_start_hz <= 0 or sweep_end_hz <= 0):
+            raise ValueError(
+                f"{axis_label} ({waveform_label}): logarithmic sweep requires start/end frequencies > 0."
+            )
     if mode == MODE_MULTISINE:
         _parse_multisine_components(multisine_components, f"{axis_label} ({waveform_label})")
 
@@ -366,6 +386,7 @@ def _generate_axis_section(t_local: np.ndarray, duration_s: float, params: AxisS
         offset=params.offset,
         phase_deg=params.phase_deg,
         frequency_hz=params.frequency_hz,
+        sweep_type=params.sweep_type,
         sweep_start_hz=params.sweep_start_hz,
         sweep_end_hz=params.sweep_end_hz,
         ramp_start=params.ramp_start,
@@ -382,6 +403,7 @@ def _generate_axis_section(t_local: np.ndarray, duration_s: float, params: AxisS
             offset=params.secondary_offset,
             phase_deg=params.secondary_phase_deg,
             frequency_hz=params.secondary_frequency_hz,
+            sweep_type=params.secondary_sweep_type,
             sweep_start_hz=params.secondary_sweep_start_hz,
             sweep_end_hz=params.secondary_sweep_end_hz,
             ramp_start=params.secondary_ramp_start,
@@ -400,6 +422,7 @@ def _generate_waveform(
     offset: float,
     phase_deg: float,
     frequency_hz: float,
+    sweep_type: str,
     sweep_start_hz: float,
     sweep_end_hz: float,
     ramp_start: float,
@@ -426,9 +449,27 @@ def _generate_waveform(
         if duration_s <= 0:
             phase = phase_rad
             return np.full_like(t_local, offset + amplitude * math.sin(phase), dtype=float)
-        k = (sweep_end_hz - sweep_start_hz) / duration_s
-        phase = 2.0 * math.pi * (sweep_start_hz * t_local + 0.5 * k * t_local * t_local) + phase_rad
-        return offset + amplitude * np.sin(phase)
+        if sweep_type == SWEEP_TYPE_LINEAR:
+            k = (sweep_end_hz - sweep_start_hz) / duration_s
+            phase = 2.0 * math.pi * (sweep_start_hz * t_local + 0.5 * k * t_local * t_local) + phase_rad
+            return offset + amplitude * np.sin(phase)
+        if sweep_type == SWEEP_TYPE_LOG:
+            if sweep_start_hz <= 0 or sweep_end_hz <= 0:
+                raise ValueError("Logarithmic sweep requires start/end frequencies > 0.")
+            ratio = sweep_end_hz / sweep_start_hz
+            if math.isclose(ratio, 1.0, rel_tol=1e-12, abs_tol=1e-12):
+                phase = 2.0 * math.pi * sweep_start_hz * t_local + phase_rad
+                return offset + amplitude * np.sin(phase)
+            log_ratio = math.log(ratio)
+            phase = (
+                2.0
+                * math.pi
+                * (sweep_start_hz * duration_s / log_ratio)
+                * np.expm1((t_local / duration_s) * log_ratio)
+                + phase_rad
+            )
+            return offset + amplitude * np.sin(phase)
+        raise ValueError(f"Unsupported sweep type: {sweep_type}")
 
     if mode == MODE_MULTISINE:
         values = np.full_like(t_local, offset, dtype=float)

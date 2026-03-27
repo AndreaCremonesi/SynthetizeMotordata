@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import csv
 import json
+import math
+import numpy as np
 
 try:
     from synth_gui_shared import *
@@ -35,6 +38,79 @@ PREVIEW_MAX_POINTS_DYNAMICS = 20000
 
 class RuntimeMixin:
     """Owns generation pipeline, diagnostics, and CSV export actions."""
+
+    def _set_csv_view_mode(self, enabled: bool) -> None:
+        self.csv_view_mode = bool(enabled)
+        if not enabled:
+            self.loaded_csv_path = None
+        close_button = getattr(self, "close_csv_preview_button", None)
+        if close_button is not None:
+            try:
+                close_button.configure(state="normal" if enabled else "disabled")
+            except Exception:
+                pass
+
+        for axis in ("y", "z"):
+            ui = self.axis_ui.get(axis, {})
+            tree = ui.get("tree")
+            if tree is not None:
+                try:
+                    tree.state(["disabled"] if enabled else ["!disabled"])
+                except Exception:
+                    pass
+
+            for key in ("add_button", "delete_button", "up_button", "down_button", "copy_button", "paste_button"):
+                button = ui.get(key)
+                if button is not None:
+                    try:
+                        button.configure(state="disabled" if enabled else "normal")
+                    except Exception:
+                        pass
+
+            for key in (
+                "duration_entry",
+                "mode_combo",
+                "secondary_mode_combo",
+                "secondary_check",
+                "ramp_lock_check",
+                "transition_check",
+                "transition_duration_entry",
+                "transition_eat_combo",
+            ):
+                widget = ui.get(key)
+                if widget is not None:
+                    try:
+                        widget.configure(state="disabled" if enabled else "normal")
+                    except Exception:
+                        pass
+
+            rows = ui.get("rows", {})
+            if isinstance(rows, dict):
+                for meta in rows.values():
+                    if not isinstance(meta, dict):
+                        continue
+                    entry = meta.get("entry")
+                    scale = meta.get("scale")
+                    if entry is not None:
+                        try:
+                            entry.configure(state="disabled" if enabled else "normal")
+                        except Exception:
+                            pass
+                    if scale is not None:
+                        try:
+                            scale.configure(state="disabled" if enabled else "normal")
+                        except Exception:
+                            pass
+
+            if not enabled:
+                self._load_selected_item_into_editor(axis)
+
+    def _on_close_csv_preview(self) -> None:
+        if not bool(getattr(self, "csv_view_mode", False)):
+            self._set_status("CSV preview is not active.", is_error=False)
+            return
+        self._set_csv_view_mode(False)
+        self._schedule_refresh()
 
     def _selected_section_index(self, axis: str) -> Optional[int]:
         row_type, row_index = self._selected_row_info(axis)
@@ -77,6 +153,7 @@ class RuntimeMixin:
             z=result["z"],
             y_boundaries=result["y_boundaries"],
             z_boundaries=result["z_boundaries"],
+            show_recipe_overlays=bool(result.get("show_recipe_overlays", True)),
         )
 
     def _on_plot_tab_changed(self) -> None:
@@ -89,7 +166,43 @@ class RuntimeMixin:
             z=result["z"],
             y_boundaries=result["y_boundaries"],
             z_boundaries=result["z_boundaries"],
+            show_recipe_overlays=bool(result.get("show_recipe_overlays", True)),
         )
+
+    def _update_position_plot_split_button_text(self) -> None:
+        button = getattr(self, "position_split_button", None)
+        if button is None:
+            return
+        split = bool(self.position_plot_split_var.get())
+        button.configure(text="Unite Y/Z" if split else "Split Y/Z")
+
+    def _rebuild_position_axes(self) -> None:
+        split = bool(self.position_plot_split_var.get())
+        self.fig_pos.clear()
+        if split:
+            self.ax_pos_y = self.fig_pos.add_subplot(211)
+            self.ax_pos_z = self.fig_pos.add_subplot(212, sharex=self.ax_pos_y)
+            self.ax_pos = self.ax_pos_y
+        else:
+            self.ax_pos = self.fig_pos.add_subplot(111)
+            self.ax_pos_y = None
+            self.ax_pos_z = None
+
+    def _on_toggle_position_plot_split(self) -> None:
+        self.position_plot_split_var.set(not bool(self.position_plot_split_var.get()))
+        self._update_position_plot_split_button_text()
+        result = self._last_generated
+        if result:
+            self._plot_preview(
+                t=result["t"],
+                y=result["y"],
+                z=result["z"],
+                y_boundaries=result["y_boundaries"],
+                z_boundaries=result["z_boundaries"],
+                show_recipe_overlays=bool(result.get("show_recipe_overlays", True)),
+            )
+        else:
+            self._clear_plots()
 
     def _active_plot_tab_index(self) -> int:
         notebook = getattr(self, "plot_notebook", None)
@@ -326,6 +439,7 @@ class RuntimeMixin:
         z: Any,
         y_boundaries: List[float],
         z_boundaries: List[float],
+        show_recipe_overlays: bool = True,
     ) -> None:
         active_tab = self._active_plot_tab_index()
         render_position = active_tab in (-1, 0)
@@ -334,24 +448,10 @@ class RuntimeMixin:
 
         if render_position:
             t_plot, y_plot, z_plot = self._decimate_for_preview(t, y, z)
-            self.ax_pos.clear()
-            self.ax_pos.plot(t_plot, y_plot, label="Y position", color="#1f77b4", linewidth=1.4)
-            self.ax_pos.plot(t_plot, z_plot, label="Z position", color="#2ca02c", linewidth=1.4)
-
-            auto_fill_labels: List[Tuple[float, str]] = []
-            for start_s, end_s in self._axis_auto_fill_intervals("y"):
-                self.ax_pos.axvspan(start_s, end_s, color="#d9edf7", alpha=0.35, linewidth=0)
-                auto_fill_labels.append(((start_s + end_s) * 0.5, "Y auto-fill"))
-            for start_s, end_s in self._axis_auto_fill_intervals("z"):
-                self.ax_pos.axvspan(start_s, end_s, color="#fde2e4", alpha=0.30, linewidth=0)
-                auto_fill_labels.append(((start_s + end_s) * 0.5, "Z auto-fill"))
-
-            for boundary in y_boundaries[1:-1]:
-                self.ax_pos.axvline(boundary, color="#1f77b4", linestyle="--", alpha=0.25, linewidth=1.0)
-            for boundary in z_boundaries[1:-1]:
-                self.ax_pos.axvline(boundary, color="#2ca02c", linestyle=":", alpha=0.30, linewidth=1.0)
+            self._rebuild_position_axes()
 
             def _overlay_selected_segment(
+                target_ax: Any,
                 axis: str,
                 boundaries: List[float],
                 values: Any,
@@ -375,7 +475,7 @@ class RuntimeMixin:
                 seg_t = t[start_idx:end_idx]
                 seg_v = values[start_idx:end_idx]
                 seg_t_plot, seg_v_plot = self._decimate_for_preview(seg_t, seg_v, max_points=1200)
-                self.ax_pos.axvspan(
+                target_ax.axvspan(
                     float(seg_t[0]),
                     float(seg_t[-1]),
                     color=color,
@@ -383,7 +483,7 @@ class RuntimeMixin:
                     linewidth=0,
                     zorder=2,
                 )
-                self.ax_pos.plot(
+                target_ax.plot(
                     seg_t_plot,
                     seg_v_plot,
                     color=color,
@@ -393,25 +493,73 @@ class RuntimeMixin:
                     label=label,
                 )
 
-            _overlay_selected_segment("y", y_boundaries, y, "#1f77b4", "Y selected section")
-            _overlay_selected_segment("z", z_boundaries, z, "#2ca02c", "Z selected section")
+            if self.ax_pos_z is None:
+                self.ax_pos.plot(t_plot, y_plot, label="Y position", color="#1f77b4", linewidth=1.4)
+                self.ax_pos.plot(t_plot, z_plot, label="Z position", color="#2ca02c", linewidth=1.4)
 
-            self.ax_pos.set_xlabel("Time (s)")
-            self.ax_pos.set_ylabel("Position (m)")
-            self.ax_pos.set_title("Position vs Time")
-            self.ax_pos.grid(True, alpha=0.25)
-            self.ax_pos.legend(loc="upper right")
-            for x_center, label in auto_fill_labels:
-                self.ax_pos.text(
-                    x_center,
-                    0.98,
-                    label,
-                    transform=self.ax_pos.get_xaxis_transform(),
-                    ha="center",
-                    va="top",
-                    fontsize=8,
-                    color="#1f4e79",
-                )
+                auto_fill_labels: List[Tuple[float, str]] = []
+                if show_recipe_overlays:
+                    for start_s, end_s in self._axis_auto_fill_intervals("y"):
+                        self.ax_pos.axvspan(start_s, end_s, color="#d9edf7", alpha=0.35, linewidth=0)
+                        auto_fill_labels.append(((start_s + end_s) * 0.5, "Y auto-fill"))
+                    for start_s, end_s in self._axis_auto_fill_intervals("z"):
+                        self.ax_pos.axvspan(start_s, end_s, color="#fde2e4", alpha=0.30, linewidth=0)
+                        auto_fill_labels.append(((start_s + end_s) * 0.5, "Z auto-fill"))
+
+                    for boundary in y_boundaries[1:-1]:
+                        self.ax_pos.axvline(boundary, color="#1f77b4", linestyle="--", alpha=0.25, linewidth=1.0)
+                    for boundary in z_boundaries[1:-1]:
+                        self.ax_pos.axvline(boundary, color="#2ca02c", linestyle=":", alpha=0.30, linewidth=1.0)
+
+                    _overlay_selected_segment(self.ax_pos, "y", y_boundaries, y, "#1f77b4", "Y selected section")
+                    _overlay_selected_segment(self.ax_pos, "z", z_boundaries, z, "#2ca02c", "Z selected section")
+
+                self.ax_pos.set_xlabel("Time (s)")
+                self.ax_pos.set_ylabel("Position (m)")
+                self.ax_pos.set_title("Position vs Time")
+                self.ax_pos.grid(True, alpha=0.25)
+                self.ax_pos.legend(loc="upper right")
+                if show_recipe_overlays:
+                    for x_center, label in auto_fill_labels:
+                        self.ax_pos.text(
+                            x_center,
+                            0.98,
+                            label,
+                            transform=self.ax_pos.get_xaxis_transform(),
+                            ha="center",
+                            va="top",
+                            fontsize=8,
+                            color="#1f4e79",
+                        )
+            else:
+                self.ax_pos_y.plot(t_plot, y_plot, label="Y position", color="#1f77b4", linewidth=1.4)
+                self.ax_pos_z.plot(t_plot, z_plot, label="Z position", color="#2ca02c", linewidth=1.4)
+
+                if show_recipe_overlays:
+                    for start_s, end_s in self._axis_auto_fill_intervals("y"):
+                        self.ax_pos_y.axvspan(start_s, end_s, color="#d9edf7", alpha=0.35, linewidth=0)
+                    for start_s, end_s in self._axis_auto_fill_intervals("z"):
+                        self.ax_pos_z.axvspan(start_s, end_s, color="#fde2e4", alpha=0.30, linewidth=0)
+
+                    for boundary in y_boundaries[1:-1]:
+                        self.ax_pos_y.axvline(boundary, color="#1f77b4", linestyle="--", alpha=0.25, linewidth=1.0)
+                    for boundary in z_boundaries[1:-1]:
+                        self.ax_pos_z.axvline(boundary, color="#2ca02c", linestyle=":", alpha=0.30, linewidth=1.0)
+
+                    _overlay_selected_segment(self.ax_pos_y, "y", y_boundaries, y, "#1f77b4", "Y selected section")
+                    _overlay_selected_segment(self.ax_pos_z, "z", z_boundaries, z, "#2ca02c", "Z selected section")
+
+                self.ax_pos_y.set_ylabel("Y position (m)")
+                self.ax_pos_y.set_title("Y Position vs Time")
+                self.ax_pos_y.grid(True, alpha=0.25)
+                self.ax_pos_y.legend(loc="upper right")
+                self.ax_pos_y.tick_params(axis="x", labelbottom=False)
+
+                self.ax_pos_z.set_xlabel("Time (s)")
+                self.ax_pos_z.set_ylabel("Z position (m)")
+                self.ax_pos_z.set_title("Z Position vs Time")
+                self.ax_pos_z.grid(True, alpha=0.25)
+                self.ax_pos_z.legend(loc="upper right")
             self.canvas_pos.draw_idle()
 
         if render_dynamics:
@@ -454,7 +602,15 @@ class RuntimeMixin:
             self.canvas_path.draw_idle()
 
     def _clear_plots(self, reason: str = "") -> None:
-        for ax in (self.ax_pos, self.ax_vel, self.ax_acc, self.ax_path):
+        self._rebuild_position_axes()
+        position_axes = [self.ax_pos] if self.ax_pos_z is None else [self.ax_pos_y, self.ax_pos_z]
+        for ax in position_axes:
+            if ax is None:
+                continue
+            ax.clear()
+            if reason:
+                ax.text(0.5, 0.5, reason, transform=ax.transAxes, ha="center", va="center")
+        for ax in (self.ax_vel, self.ax_acc, self.ax_path):
             ax.clear()
             if reason:
                 ax.text(0.5, 0.5, reason, transform=ax.transAxes, ha="center", va="center")
@@ -496,7 +652,117 @@ class RuntimeMixin:
             "y_boundaries": y_boundaries,
             "z_boundaries": z_boundaries,
             "report": report,
+            "show_recipe_overlays": True,
         }
+
+    @staticmethod
+    def _parse_csv_numeric(value: Any, column_name: str, line_number: int) -> float:
+        text = "" if value is None else str(value).strip()
+        if not text:
+            raise ValueError(f"Line {line_number}: column '{column_name}' is empty.")
+        try:
+            parsed = float(text)
+        except ValueError as exc:
+            raise ValueError(f"Line {line_number}: column '{column_name}' is not numeric ('{text}').") from exc
+        if not math.isfinite(parsed):
+            raise ValueError(f"Line {line_number}: column '{column_name}' must be finite.")
+        return parsed
+
+    def _build_preview_result_from_csv(self, path: Path) -> Dict[str, Any]:
+        if not self._apply_sample_rate_from_ui(show_popup=False):
+            raise ValueError("Sample rate must be valid before loading CSV.")
+        sample_rate_hz = float(self.recipe.sample_rate_hz)
+        if sample_rate_hz <= 0:
+            raise ValueError("Sample rate must be > 0.")
+
+        with path.open("r", newline="", encoding="utf-8-sig") as file:
+            sample = file.read(4096)
+            file.seek(0)
+            try:
+                dialect = csv.Sniffer().sniff(sample, delimiters=",;\t")
+            except csv.Error:
+                dialect = csv.excel
+            reader = csv.DictReader(file, dialect=dialect)
+            if not reader.fieldnames:
+                raise ValueError("CSV header is missing.")
+
+            columns = {str(name).strip(): str(name) for name in reader.fieldnames}
+            if Y_COL not in columns or Z_COL not in columns:
+                available = ", ".join(str(name) for name in reader.fieldnames if name is not None)
+                raise ValueError(
+                    f"CSV must contain columns '{Y_COL}' and '{Z_COL}'. Available columns: {available}"
+                )
+
+            y_col = columns[Y_COL]
+            z_col = columns[Z_COL]
+            y_values: List[float] = []
+            z_values: List[float] = []
+
+            for line_number, row in enumerate(reader, start=2):
+                y_values.append(self._parse_csv_numeric(row.get(y_col), y_col, line_number))
+                z_values.append(self._parse_csv_numeric(row.get(z_col), z_col, line_number))
+
+        if not y_values:
+            raise ValueError("CSV contains no data rows.")
+
+        y = np.asarray(y_values, dtype=float)
+        z = np.asarray(z_values, dtype=float)
+        t = np.arange(len(y), dtype=float) / sample_rate_hz
+        boundaries = [0.0]
+        report = evaluate_limits(
+            y_values=y,
+            z_values=z,
+            sample_rate_hz=sample_rate_hz,
+            y_boundaries_s=boundaries,
+            z_boundaries_s=boundaries,
+            config=self._read_limits_config(),
+        )
+        return {
+            "t": t,
+            "y": y,
+            "z": z,
+            "y_boundaries": boundaries,
+            "z_boundaries": boundaries,
+            "report": report,
+            "show_recipe_overlays": False,
+        }
+
+    def _on_load_trajectory_csv(self) -> None:
+        picked = filedialog.askopenfilename(
+            parent=self.root,
+            title="Load Trajectory CSV For Preview",
+            initialdir=str(OUTPUT_DIR),
+            filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+        )
+        if not picked:
+            return
+
+        path = Path(picked)
+        try:
+            result = self._build_preview_result_from_csv(path)
+        except Exception as exc:
+            self._set_status(f"CSV load failed: {exc}", is_error=True)
+            messagebox.showerror("Load CSV Error", str(exc))
+            return
+
+        self._set_csv_view_mode(True)
+        self.loaded_csv_path = path
+        self._last_generated = result
+        self._plot_preview(
+            t=result["t"],
+            y=result["y"],
+            z=result["z"],
+            y_boundaries=result["y_boundaries"],
+            z_boundaries=result["z_boundaries"],
+            show_recipe_overlays=False,
+        )
+        self._set_warning_report(result["report"])
+        sample_rate_hz = float(self.recipe.sample_rate_hz)
+        duration_s = (len(result["t"]) - 1) / sample_rate_hz if len(result["t"]) else 0.0
+        self._set_status(
+            f"CSV loaded for preview: {path} ({len(result['t'])} samples, duration {duration_s:.6g}s).",
+            is_error=False,
+        )
 
     def _schedule_refresh(self) -> None:
         if self._pending_refresh_id is not None:
@@ -508,6 +774,34 @@ class RuntimeMixin:
 
     def _refresh_preview(self) -> None:
         self._pending_refresh_id = None
+
+        if bool(getattr(self, "csv_view_mode", False)) and getattr(self, "loaded_csv_path", None) is not None:
+            try:
+                result = self._build_preview_result_from_csv(Path(self.loaded_csv_path))
+            except Exception as exc:
+                self._last_generated = None
+                self._set_warning_report(None)
+                self._clear_plots("CSV preview unavailable")
+                self._set_status(f"CSV preview failed: {exc}", is_error=True)
+                return
+
+            self._last_generated = result
+            self._plot_preview(
+                t=result["t"],
+                y=result["y"],
+                z=result["z"],
+                y_boundaries=result["y_boundaries"],
+                z_boundaries=result["z_boundaries"],
+                show_recipe_overlays=False,
+            )
+            self._set_warning_report(result["report"])
+            sample_rate_hz = float(self.recipe.sample_rate_hz)
+            duration_s = (len(result["t"]) - 1) / sample_rate_hz if len(result["t"]) else 0.0
+            self._set_status(
+                f"CSV preview updated: {self.loaded_csv_path} ({len(result['t'])} samples, duration {duration_s:.6g}s).",
+                is_error=False,
+            )
+            return
 
         if not self._apply_sample_rate_from_ui(show_popup=False):
             self._last_generated = None
@@ -544,6 +838,7 @@ class RuntimeMixin:
             z=result["z"],
             y_boundaries=result["y_boundaries"],
             z_boundaries=result["z_boundaries"],
+            show_recipe_overlays=bool(result.get("show_recipe_overlays", True)),
         )
         self._set_warning_report(result["report"])
 
@@ -730,6 +1025,7 @@ class RuntimeMixin:
                 "window_geometry": self.root.winfo_geometry(),
                 "selected_rows": selected_rows,
                 "selected_plot_tab": tab_index,
+                "position_plot_split": bool(self.position_plot_split_var.get()),
                 "sash_positions": self._collect_sash_positions(),
             },
         }
@@ -781,6 +1077,7 @@ class RuntimeMixin:
         if not isinstance(selected_rows, dict):
             selected_rows = {}
         selected_tab_raw = ui_state.get("selected_plot_tab", 0)
+        position_plot_split = self._coerce_saved_bool(ui_state.get("position_plot_split", False))
         sash_positions = ui_state.get("sash_positions", {})
 
         self._suspend_events = True
@@ -789,8 +1086,11 @@ class RuntimeMixin:
         self.sample_rate_var.set(sample_rate_text)
         self.sample_rate_scale_var.set(recipe.sample_rate_hz)
         self.output_name_var.set(output_name)
+        self.position_plot_split_var.set(position_plot_split)
         self._apply_limits_config(limits_cfg)
         self._suspend_events = False
+        self._set_csv_view_mode(False)
+        self._update_position_plot_split_button_text()
 
         self._refresh_axis_tree("y", select=("section", 0))
         self._refresh_axis_tree("z", select=("section", 0))
@@ -845,20 +1145,9 @@ class RuntimeMixin:
 
     def _on_save_project(self) -> None:
         if self.project_path is None:
-            suggested = self._suggest_project_path()
-            picked = filedialog.asksaveasfilename(
-                parent=self.root,
-                title="Save Synth Project",
-                initialdir=str(suggested.parent),
-                initialfile=suggested.name,
-                defaultextension=PROJECT_FILE_EXTENSION,
-                filetypes=[("Synth project", f"*{PROJECT_FILE_EXTENSION}"), ("JSON", "*.json"), ("All files", "*.*")],
-            )
-            if not picked:
+            target = self._pick_project_save_path(title="Save Synth Project")
+            if target is None:
                 return
-            target = Path(picked)
-            if not str(target).lower().endswith(PROJECT_FILE_EXTENSION):
-                target = target.with_name(target.name + PROJECT_FILE_EXTENSION)
             self.project_path = target
 
         try:
@@ -875,6 +1164,30 @@ class RuntimeMixin:
 
         self.project_path_var.set(f"Project: {self.project_path}")
         self._set_status(f"Project saved: {self.project_path}", is_error=False)
+
+    def _pick_project_save_path(self, title: str) -> Optional[Path]:
+        suggested = self.project_path if self.project_path is not None else self._suggest_project_path()
+        picked = filedialog.asksaveasfilename(
+            parent=self.root,
+            title=title,
+            initialdir=str(suggested.parent),
+            initialfile=suggested.name,
+            defaultextension=PROJECT_FILE_EXTENSION,
+            filetypes=[("Synth project", f"*{PROJECT_FILE_EXTENSION}"), ("JSON", "*.json"), ("All files", "*.*")],
+        )
+        if not picked:
+            return None
+        target = Path(picked)
+        if not str(target).lower().endswith(PROJECT_FILE_EXTENSION):
+            target = target.with_name(target.name + PROJECT_FILE_EXTENSION)
+        return target
+
+    def _on_save_project_as(self) -> None:
+        target = self._pick_project_save_path(title="Save Synth Project As")
+        if target is None:
+            return
+        self.project_path = target
+        self._on_save_project()
 
     def _on_load_project(self) -> None:
         picked = filedialog.askopenfilename(

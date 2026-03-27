@@ -11,7 +11,9 @@ try:
         Path,
         TEMPLATE_PATH,
         Any,
+        AxisMotionSection,
         Dict,
+        List,
         Optional,
         TrajectoryRecipe,
         create_default_recipe,
@@ -29,7 +31,9 @@ except ModuleNotFoundError:
         Path,
         TEMPLATE_PATH,
         Any,
+        AxisMotionSection,
         Dict,
+        List,
         Optional,
         TrajectoryRecipe,
         create_default_recipe,
@@ -58,18 +62,26 @@ class TrajectorySynthApp(LayoutMixin, AxisEditorMixin, RuntimeMixin):
         self.status_var = tk.StringVar(value="Ready")
         self.output_name_var = tk.StringVar(value=self._suggest_unique_output_path().name)
         self.project_path_var = tk.StringVar(value="Project: (unsaved)")
+        self.position_plot_split_var = tk.BooleanVar(value=False)
         self.project_path: Optional[Path] = None
 
         self.axis_ui: Dict[str, Dict[str, Any]] = {}
         self.limit_vars: Dict[str, Dict[str, tk.Variable]] = {}
         self.warning_text_widget: Optional[tk.Text] = None
         self.status_label: Optional[ttk.Label] = None
+        self.position_split_button: Optional[ttk.Button] = None
+        self.close_csv_preview_button: Optional[ttk.Button] = None
+        self.section_clipboard: List[AxisMotionSection] = []
+        self.csv_view_mode = False
+        self.loaded_csv_path: Optional[Path] = None
 
         self._suspend_events = False
         self._pending_refresh_id: Optional[str] = None
         self._last_generated: Optional[Dict[str, Any]] = None
 
         self._build_layout()
+        self._set_csv_view_mode(False)
+        self._update_position_plot_split_button_text()
         self._refresh_axis_tree("y")
         self._refresh_axis_tree("z")
         self._load_selected_item_into_editor("y")
