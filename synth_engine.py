@@ -39,10 +39,11 @@ DEFAULT_HEADER = [
 
 MODE_SINE = "sine"
 MODE_SWEEP = "sweep"
+MODE_S_CURVE = "s_curve"
 MODE_RAMP = "ramp"
 MODE_CONSTANT = "constant"
 MODE_MULTISINE = "multisine"
-VALID_MODES = (MODE_SINE, MODE_SWEEP, MODE_RAMP, MODE_CONSTANT, MODE_MULTISINE)
+VALID_MODES = (MODE_SINE, MODE_SWEEP, MODE_S_CURVE, MODE_RAMP, MODE_CONSTANT, MODE_MULTISINE)
 SWEEP_TYPE_LINEAR = "linear"
 SWEEP_TYPE_LOG = "logarithmic"
 VALID_SWEEP_TYPES = (SWEEP_TYPE_LINEAR, SWEEP_TYPE_LOG)
@@ -74,6 +75,11 @@ class AxisSectionParams:
     sweep_start_hz: float = 0.5
     sweep_end_hz: float = 5.0
     sweep_accel_star: float = DEFAULT_SWEEP_ACCEL_STAR
+    s_curve_start: float = 0.0
+    s_curve_end: float = 0.01
+    s_curve_max_speed: float = 0.05
+    s_curve_max_acceleration: float = 1.0
+    s_curve_max_jerk: float = 10.0
     ramp_start: float = 0.0
     ramp_end: float = 0.01
     ramp_speed_mps: float = 0.002
@@ -90,6 +96,11 @@ class AxisSectionParams:
     secondary_sweep_start_hz: float = 0.5
     secondary_sweep_end_hz: float = 5.0
     secondary_sweep_accel_star: float = DEFAULT_SWEEP_ACCEL_STAR
+    secondary_s_curve_start: float = 0.0
+    secondary_s_curve_end: float = 0.0
+    secondary_s_curve_max_speed: float = 0.05
+    secondary_s_curve_max_acceleration: float = 1.0
+    secondary_s_curve_max_jerk: float = 10.0
     secondary_ramp_start: float = 0.0
     secondary_ramp_end: float = 0.0
     secondary_constant_value: float = 0.0
@@ -233,10 +244,11 @@ def validate_header(header: Sequence[str]) -> None:
         raise ValueError(f"CSV header missing required columns: {missing_text}")
 
 
-def _validate_axis_params(axis_label: str, params: AxisSectionParams) -> None:
+def _validate_axis_params(axis_label: str, duration_s: float, params: AxisSectionParams) -> None:
     _validate_waveform_params(
         axis_label=axis_label,
         waveform_label="primary waveform",
+        duration_s=duration_s,
         mode=params.mode,
         amplitude=params.amplitude,
         frequency_hz=params.frequency_hz,
@@ -244,12 +256,18 @@ def _validate_axis_params(axis_label: str, params: AxisSectionParams) -> None:
         sweep_start_hz=params.sweep_start_hz,
         sweep_end_hz=params.sweep_end_hz,
         sweep_accel_star=params.sweep_accel_star,
+        s_curve_start=params.s_curve_start,
+        s_curve_end=params.s_curve_end,
+        s_curve_max_speed=params.s_curve_max_speed,
+        s_curve_max_acceleration=params.s_curve_max_acceleration,
+        s_curve_max_jerk=params.s_curve_max_jerk,
         multisine_components=params.multisine_components,
     )
     if params.secondary_enabled:
         _validate_waveform_params(
             axis_label=axis_label,
             waveform_label="secondary waveform",
+            duration_s=duration_s,
             mode=params.secondary_mode,
             amplitude=params.secondary_amplitude,
             frequency_hz=params.secondary_frequency_hz,
@@ -257,13 +275,18 @@ def _validate_axis_params(axis_label: str, params: AxisSectionParams) -> None:
             sweep_start_hz=params.secondary_sweep_start_hz,
             sweep_end_hz=params.secondary_sweep_end_hz,
             sweep_accel_star=params.secondary_sweep_accel_star,
+            s_curve_start=params.secondary_s_curve_start,
+            s_curve_end=params.secondary_s_curve_end,
+            s_curve_max_speed=params.secondary_s_curve_max_speed,
+            s_curve_max_acceleration=params.secondary_s_curve_max_acceleration,
+            s_curve_max_jerk=params.secondary_s_curve_max_jerk,
             multisine_components=params.secondary_multisine_components,
         )
-
 
 def _validate_waveform_params(
     axis_label: str,
     waveform_label: str,
+    duration_s: float,
     mode: str,
     amplitude: float,
     frequency_hz: float,
@@ -271,6 +294,11 @@ def _validate_waveform_params(
     sweep_start_hz: float,
     sweep_end_hz: float,
     sweep_accel_star: float,
+    s_curve_start: float,
+    s_curve_end: float,
+    s_curve_max_speed: float,
+    s_curve_max_acceleration: float,
+    s_curve_max_jerk: float,
     multisine_components: str,
 ) -> None:
     if mode not in VALID_MODES:
@@ -294,6 +322,17 @@ def _validate_waveform_params(
             )
         if sweep_accel_star < 0:
             raise ValueError(f"{axis_label} ({waveform_label}): sweep a* cannot be negative.")
+    if mode == MODE_S_CURVE:
+        _validate_s_curve_constraints(
+            axis_label=axis_label,
+            waveform_label=waveform_label,
+            duration_s=duration_s,
+            s_curve_start=s_curve_start,
+            s_curve_end=s_curve_end,
+            s_curve_max_speed=s_curve_max_speed,
+            s_curve_max_acceleration=s_curve_max_acceleration,
+            s_curve_max_jerk=s_curve_max_jerk,
+        )
     if mode == MODE_MULTISINE:
         _parse_multisine_components(multisine_components, f"{axis_label} ({waveform_label})")
 
@@ -341,6 +380,72 @@ def _parse_multisine_components(raw: str, axis_label: str = "Axis") -> List[Tupl
     return components
 
 
+def _s_curve_peak_requirements(s_curve_start: float, s_curve_end: float, duration_s: float) -> Tuple[float, float, float]:
+    if duration_s <= 0:
+        return 0.0, 0.0, 0.0
+
+    delta = abs(float(s_curve_end) - float(s_curve_start))
+    peak_speed = delta * 1.875 / duration_s
+    peak_acceleration = delta * (10.0 / math.sqrt(3.0)) / (duration_s * duration_s)
+    peak_jerk = delta * 60.0 / (duration_s * duration_s * duration_s)
+    return peak_speed, peak_acceleration, peak_jerk
+
+
+def _validate_s_curve_constraints(
+    axis_label: str,
+    waveform_label: str,
+    duration_s: float,
+    s_curve_start: float,
+    s_curve_end: float,
+    s_curve_max_speed: float,
+    s_curve_max_acceleration: float,
+    s_curve_max_jerk: float,
+) -> None:
+    if s_curve_max_speed <= 0:
+        raise ValueError(f"{axis_label} ({waveform_label}): S-curve max speed must be > 0.")
+    if s_curve_max_acceleration <= 0:
+        raise ValueError(f"{axis_label} ({waveform_label}): S-curve max acceleration must be > 0.")
+    if s_curve_max_jerk <= 0:
+        raise ValueError(f"{axis_label} ({waveform_label}): S-curve max jerk must be > 0.")
+
+    required_speed, required_acceleration, required_jerk = _s_curve_peak_requirements(
+        s_curve_start=s_curve_start,
+        s_curve_end=s_curve_end,
+        duration_s=duration_s,
+    )
+
+    tol = 1e-12
+    if required_speed > s_curve_max_speed + tol:
+        raise ValueError(
+            f"{axis_label} ({waveform_label}): S-curve requires peak speed {required_speed:.6g} m/s "
+            f"(limit {s_curve_max_speed:.6g} m/s)."
+        )
+    if required_acceleration > s_curve_max_acceleration + tol:
+        raise ValueError(
+            f"{axis_label} ({waveform_label}): S-curve requires peak acceleration {required_acceleration:.6g} m/s^2 "
+            f"(limit {s_curve_max_acceleration:.6g} m/s^2)."
+        )
+    if required_jerk > s_curve_max_jerk + tol:
+        raise ValueError(
+            f"{axis_label} ({waveform_label}): S-curve requires peak jerk {required_jerk:.6g} m/s^3 "
+            f"(limit {s_curve_max_jerk:.6g} m/s^3)."
+        )
+
+
+def _generate_s_curve_trajectory(
+    t_local: np.ndarray,
+    duration_s: float,
+    s_curve_start: float,
+    s_curve_end: float,
+) -> np.ndarray:
+    if duration_s <= 0:
+        return np.full_like(t_local, s_curve_start, dtype=float)
+
+    u = np.clip(t_local / duration_s, 0.0, 1.0)
+    smoothstep = 10.0 * (u**3) - 15.0 * (u**4) + 6.0 * (u**5)
+    return s_curve_start + (s_curve_end - s_curve_start) * smoothstep
+
+
 def _section_sample_count(duration_s: float, sample_rate_hz: float) -> int:
     return int(round(duration_s * sample_rate_hz))
 
@@ -359,7 +464,7 @@ def _validate_axis_sections(axis_label: str, sections: Sequence[AxisMotionSectio
             raise ValueError(
                 f"{axis_label} section {idx}: duration too short for sample rate (needs at least 1 sample)."
             )
-        _validate_axis_params(f"{axis_label} section {idx}", section.params)
+        _validate_axis_params(f"{axis_label} section {idx}", section.duration_s, section.params)
 
 
 def _validate_axis_transitions(axis_label: str, pipeline: AxisPipeline) -> None:
@@ -398,6 +503,11 @@ def _generate_axis_section(t_local: np.ndarray, duration_s: float, params: AxisS
         sweep_start_hz=params.sweep_start_hz,
         sweep_end_hz=params.sweep_end_hz,
         sweep_accel_star=params.sweep_accel_star,
+        s_curve_start=params.s_curve_start,
+        s_curve_end=params.s_curve_end,
+        s_curve_max_speed=params.s_curve_max_speed,
+        s_curve_max_acceleration=params.s_curve_max_acceleration,
+        s_curve_max_jerk=params.s_curve_max_jerk,
         ramp_start=params.ramp_start,
         ramp_end=params.ramp_end,
         constant_value=params.constant_value,
@@ -416,11 +526,17 @@ def _generate_axis_section(t_local: np.ndarray, duration_s: float, params: AxisS
             sweep_start_hz=params.secondary_sweep_start_hz,
             sweep_end_hz=params.secondary_sweep_end_hz,
             sweep_accel_star=params.secondary_sweep_accel_star,
+            s_curve_start=params.secondary_s_curve_start,
+            s_curve_end=params.secondary_s_curve_end,
+            s_curve_max_speed=params.secondary_s_curve_max_speed,
+            s_curve_max_acceleration=params.secondary_s_curve_max_acceleration,
+            s_curve_max_jerk=params.secondary_s_curve_max_jerk,
             ramp_start=params.secondary_ramp_start,
             ramp_end=params.secondary_ramp_end,
             constant_value=params.secondary_constant_value,
             multisine_components=params.secondary_multisine_components,
         )
+
     return values
 
 
@@ -461,6 +577,11 @@ def _generate_waveform(
     sweep_start_hz: float,
     sweep_end_hz: float,
     sweep_accel_star: float,
+    s_curve_start: float,
+    s_curve_end: float,
+    s_curve_max_speed: float,
+    s_curve_max_acceleration: float,
+    s_curve_max_jerk: float,
     ramp_start: float,
     ramp_end: float,
     constant_value: float,
@@ -514,6 +635,19 @@ def _generate_waveform(
             return offset + envelope * np.sin(phase)
         raise ValueError(f"Unsupported sweep type: {sweep_type}")
 
+    if mode == MODE_S_CURVE:
+        _validate_s_curve_constraints(
+            axis_label="Axis",
+            waveform_label="waveform",
+            duration_s=duration_s,
+            s_curve_start=s_curve_start,
+            s_curve_end=s_curve_end,
+            s_curve_max_speed=s_curve_max_speed,
+            s_curve_max_acceleration=s_curve_max_acceleration,
+            s_curve_max_jerk=s_curve_max_jerk,
+        )
+        return _generate_s_curve_trajectory(t_local, duration_s, s_curve_start, s_curve_end)
+
     if mode == MODE_MULTISINE:
         values = np.full_like(t_local, offset, dtype=float)
         components = _parse_multisine_components(multisine_components)
@@ -532,6 +666,7 @@ def _waveform_start_value(
     phase_deg: float,
     sweep_start_hz: float,
     sweep_accel_star: float,
+    s_curve_start: float,
     ramp_start: float,
     constant_value: float,
     multisine_components: str,
@@ -545,6 +680,8 @@ def _waveform_start_value(
     if mode == MODE_SWEEP:
         effective_amplitude = _sweep_amplitude_at_frequency(amplitude, sweep_accel_star, sweep_start_hz)
         return float(offset + effective_amplitude * math.sin(math.radians(phase_deg)))
+    if mode == MODE_S_CURVE:
+        return float(s_curve_start)
     if mode == MODE_MULTISINE:
         components = _parse_multisine_components(multisine_components)
         base = sum(comp_amp * math.sin(math.radians(comp_phase)) for comp_amp, _comp_f, comp_phase in components)
@@ -831,6 +968,7 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
             phase_deg=params.phase_deg,
             sweep_start_hz=params.sweep_start_hz,
             sweep_accel_star=params.sweep_accel_star,
+            s_curve_start=params.s_curve_start,
             ramp_start=params.ramp_start,
             constant_value=params.constant_value,
             multisine_components=params.multisine_components,
@@ -852,6 +990,8 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
                     params.secondary_sweep_start_hz,
                 ) * math.sin(math.radians(params.secondary_phase_deg))
                 params.secondary_offset = target_secondary_start - secondary_start_wave
+            elif params.secondary_mode == MODE_S_CURVE:
+                params.secondary_s_curve_start = target_secondary_start
             elif params.secondary_mode == MODE_MULTISINE:
                 components = _parse_multisine_components(params.secondary_multisine_components)
                 base_at_t0 = sum(
@@ -874,6 +1014,8 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
                 params.sweep_start_hz,
             ) * math.sin(math.radians(params.phase_deg))
             params.offset = target_primary_start - primary_start_wave
+        elif params.mode == MODE_S_CURVE:
+            params.s_curve_start = target_primary_start
         elif params.mode == MODE_MULTISINE:
             components = _parse_multisine_components(params.multisine_components)
             base_at_t0 = sum(amplitude * math.sin(math.radians(phase_deg)) for amplitude, _f, phase_deg in components)

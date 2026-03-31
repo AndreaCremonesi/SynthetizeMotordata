@@ -80,6 +80,11 @@ def _params_to_dict(params: AxisSectionParams) -> Dict[str, Any]:
         "sweep_start_hz": params.sweep_start_hz,
         "sweep_end_hz": params.sweep_end_hz,
         "sweep_accel_star": params.sweep_accel_star,
+        "s_curve_start": params.s_curve_start,
+        "s_curve_end": params.s_curve_end,
+        "s_curve_max_speed": params.s_curve_max_speed,
+        "s_curve_max_acceleration": params.s_curve_max_acceleration,
+        "s_curve_max_jerk": params.s_curve_max_jerk,
         "ramp_start": params.ramp_start,
         "ramp_end": params.ramp_end,
         "ramp_speed_mps": params.ramp_speed_mps,
@@ -96,6 +101,11 @@ def _params_to_dict(params: AxisSectionParams) -> Dict[str, Any]:
         "secondary_sweep_start_hz": params.secondary_sweep_start_hz,
         "secondary_sweep_end_hz": params.secondary_sweep_end_hz,
         "secondary_sweep_accel_star": params.secondary_sweep_accel_star,
+        "secondary_s_curve_start": params.secondary_s_curve_start,
+        "secondary_s_curve_end": params.secondary_s_curve_end,
+        "secondary_s_curve_max_speed": params.secondary_s_curve_max_speed,
+        "secondary_s_curve_max_acceleration": params.secondary_s_curve_max_acceleration,
+        "secondary_s_curve_max_jerk": params.secondary_s_curve_max_jerk,
         "secondary_ramp_start": params.secondary_ramp_start,
         "secondary_ramp_end": params.secondary_ramp_end,
         "secondary_constant_value": params.secondary_constant_value,
@@ -114,7 +124,24 @@ def _params_from_dict(data: Mapping[str, Any], prefix: str) -> AxisSectionParams
         sweep_type=_as_str(f"{prefix}.sweep_type", data.get("sweep_type", defaults.sweep_type)),
         sweep_start_hz=_as_float(f"{prefix}.sweep_start_hz", data.get("sweep_start_hz")),
         sweep_end_hz=_as_float(f"{prefix}.sweep_end_hz", data.get("sweep_end_hz")),
-        sweep_accel_star=_as_float(f"{prefix}.sweep_accel_star", data.get("sweep_accel_star", defaults.sweep_accel_star)),
+        sweep_accel_star=_as_float(
+            f"{prefix}.sweep_accel_star",
+            data.get("sweep_accel_star", defaults.sweep_accel_star),
+        ),
+        s_curve_start=_as_float(f"{prefix}.s_curve_start", data.get("s_curve_start", defaults.s_curve_start)),
+        s_curve_end=_as_float(f"{prefix}.s_curve_end", data.get("s_curve_end", defaults.s_curve_end)),
+        s_curve_max_speed=_as_float(
+            f"{prefix}.s_curve_max_speed",
+            data.get("s_curve_max_speed", defaults.s_curve_max_speed),
+        ),
+        s_curve_max_acceleration=_as_float(
+            f"{prefix}.s_curve_max_acceleration",
+            data.get("s_curve_max_acceleration", defaults.s_curve_max_acceleration),
+        ),
+        s_curve_max_jerk=_as_float(
+            f"{prefix}.s_curve_max_jerk",
+            data.get("s_curve_max_jerk", defaults.s_curve_max_jerk),
+        ),
         ramp_start=_as_float(f"{prefix}.ramp_start", data.get("ramp_start")),
         ramp_end=_as_float(f"{prefix}.ramp_end", data.get("ramp_end")),
         ramp_speed_mps=_as_float(f"{prefix}.ramp_speed_mps", data.get("ramp_speed_mps", defaults.ramp_speed_mps)),
@@ -160,6 +187,26 @@ def _params_from_dict(data: Mapping[str, Any], prefix: str) -> AxisSectionParams
         secondary_sweep_accel_star=_as_float(
             f"{prefix}.secondary_sweep_accel_star",
             data.get("secondary_sweep_accel_star", defaults.secondary_sweep_accel_star),
+        ),
+        secondary_s_curve_start=_as_float(
+            f"{prefix}.secondary_s_curve_start",
+            data.get("secondary_s_curve_start", defaults.secondary_s_curve_start),
+        ),
+        secondary_s_curve_end=_as_float(
+            f"{prefix}.secondary_s_curve_end",
+            data.get("secondary_s_curve_end", defaults.secondary_s_curve_end),
+        ),
+        secondary_s_curve_max_speed=_as_float(
+            f"{prefix}.secondary_s_curve_max_speed",
+            data.get("secondary_s_curve_max_speed", defaults.secondary_s_curve_max_speed),
+        ),
+        secondary_s_curve_max_acceleration=_as_float(
+            f"{prefix}.secondary_s_curve_max_acceleration",
+            data.get("secondary_s_curve_max_acceleration", defaults.secondary_s_curve_max_acceleration),
+        ),
+        secondary_s_curve_max_jerk=_as_float(
+            f"{prefix}.secondary_s_curve_max_jerk",
+            data.get("secondary_s_curve_max_jerk", defaults.secondary_s_curve_max_jerk),
         ),
         secondary_ramp_start=_as_float(
             f"{prefix}.secondary_ramp_start",

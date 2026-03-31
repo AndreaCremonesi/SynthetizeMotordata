@@ -401,6 +401,11 @@ class LayoutMixin:
         sweep_start_var = tk.StringVar(value="0.5")
         sweep_end_var = tk.StringVar(value="5.0")
         sweep_accel_star_var = tk.StringVar(value="1000000000000.0")
+        s_curve_start_var = tk.StringVar(value="0.0")
+        s_curve_end_var = tk.StringVar(value="0.01")
+        s_curve_max_speed_var = tk.StringVar(value="0.05")
+        s_curve_max_acceleration_var = tk.StringVar(value="1.0")
+        s_curve_max_jerk_var = tk.StringVar(value="10.0")
         ramp_start_var = tk.StringVar(value="0.0")
         ramp_end_var = tk.StringVar(value="0.01")
         ramp_speed_var = tk.StringVar(value="0.002")
@@ -417,6 +422,11 @@ class LayoutMixin:
         secondary_sweep_start_var = tk.StringVar(value="0.5")
         secondary_sweep_end_var = tk.StringVar(value="5.0")
         secondary_sweep_accel_star_var = tk.StringVar(value="1000000000000.0")
+        secondary_s_curve_start_var = tk.StringVar(value="0.0")
+        secondary_s_curve_end_var = tk.StringVar(value="0.0")
+        secondary_s_curve_max_speed_var = tk.StringVar(value="0.05")
+        secondary_s_curve_max_acceleration_var = tk.StringVar(value="1.0")
+        secondary_s_curve_max_jerk_var = tk.StringVar(value="10.0")
         secondary_ramp_start_var = tk.StringVar(value="0.0")
         secondary_ramp_end_var = tk.StringVar(value="0.0")
         secondary_multisine_components_var = tk.StringVar(value="0.0,1.0,0.0")
@@ -443,7 +453,7 @@ class LayoutMixin:
         mode_combo = ttk.Combobox(
             mode_row,
             state="readonly",
-            values=[MODE_SINE, MODE_SWEEP, MODE_RAMP, MODE_CONSTANT, MODE_MULTISINE],
+            values=[MODE_SINE, MODE_SWEEP, MODE_S_CURVE, MODE_RAMP, MODE_CONSTANT, MODE_MULTISINE],
             textvariable=mode_var,
             width=12,
         )
@@ -540,11 +550,16 @@ class LayoutMixin:
         create_row(8, "sweep_start_hz", "Sweep start (Hz)", sweep_start_var)
         create_row(9, "sweep_end_hz", "Sweep end (Hz)", sweep_end_var)
         create_row(10, "sweep_accel_star", "Sweep a* (m/s^2)", sweep_accel_star_var)
-        create_row(11, "ramp_start", "Ramp start (m)", ramp_start_var)
-        create_row(12, "ramp_end", "Ramp end (m)", ramp_end_var)
-        create_row(13, "ramp_speed", "Ramp speed (m/s)", ramp_speed_var)
+        create_row(11, "s_curve_start", "S-curve start (m)", s_curve_start_var)
+        create_row(12, "s_curve_end", "S-curve end (m)", s_curve_end_var)
+        create_row(13, "s_curve_max_speed", "S-curve max speed (m/s)", s_curve_max_speed_var)
+        create_row(14, "s_curve_max_acceleration", "S-curve max accel (m/s^2)", s_curve_max_acceleration_var)
+        create_row(15, "s_curve_max_jerk", "S-curve max jerk (m/s^3)", s_curve_max_jerk_var)
+        create_row(16, "ramp_start", "Ramp start (m)", ramp_start_var)
+        create_row(17, "ramp_end", "Ramp end (m)", ramp_end_var)
+        create_row(18, "ramp_speed", "Ramp speed (m/s)", ramp_speed_var)
         ramp_lock_row = ttk.Frame(section_editor)
-        ramp_lock_row.grid(row=14, column=0, sticky="ew", pady=1)
+        ramp_lock_row.grid(row=19, column=0, sticky="ew", pady=1)
         ramp_lock_row.columnconfigure(0, weight=1)
         ramp_lock_check = ttk.Checkbutton(
             ramp_lock_row,
@@ -554,15 +569,14 @@ class LayoutMixin:
         )
         ramp_lock_check.grid(row=0, column=0, sticky="w")
         create_row(
-            15,
+            20,
             "multisine_components",
             "Multisine terms (A,f,phi;...)",
             multisine_components_var,
             entry_width=38,
         )
-
         secondary_enabled_row = ttk.Frame(section_editor)
-        secondary_enabled_row.grid(row=16, column=0, sticky="ew", pady=(8, 1))
+        secondary_enabled_row.grid(row=22, column=0, sticky="ew", pady=(8, 1))
         secondary_enabled_row.columnconfigure(0, weight=1)
         secondary_check = ttk.Checkbutton(
             secondary_enabled_row,
@@ -573,38 +587,48 @@ class LayoutMixin:
         secondary_check.grid(row=0, column=0, sticky="w")
 
         secondary_mode_row = ttk.Frame(section_editor)
-        secondary_mode_row.grid(row=17, column=0, sticky="ew", pady=1)
+        secondary_mode_row.grid(row=23, column=0, sticky="ew", pady=1)
         secondary_mode_row.columnconfigure(1, weight=1)
         ttk.Label(secondary_mode_row, text="Secondary mode").grid(row=0, column=0, sticky="w", padx=(0, 6))
         secondary_mode_combo = ttk.Combobox(
             secondary_mode_row,
             state="readonly",
-            values=[MODE_SINE, MODE_SWEEP, MODE_RAMP, MODE_CONSTANT, MODE_MULTISINE],
+            values=[MODE_SINE, MODE_SWEEP, MODE_S_CURVE, MODE_RAMP, MODE_CONSTANT, MODE_MULTISINE],
             textvariable=secondary_mode_var,
             width=12,
         )
         secondary_mode_combo.grid(row=0, column=1, sticky="ew")
         secondary_mode_combo.bind("<<ComboboxSelected>>", lambda _event, a=axis: self._on_axis_secondary_mode_changed(a))
 
-        create_row(18, "secondary_constant_value", "Secondary constant (m)", secondary_constant_var)
-        create_row(19, "secondary_amplitude", "Secondary amplitude / A cap (m)", secondary_amplitude_var)
-        create_row(20, "secondary_offset", "Secondary offset (m)", secondary_offset_var)
-        create_row(21, "secondary_phase_deg", "Secondary phase (deg)", secondary_phase_var)
-        create_row(22, "secondary_frequency_hz", "Secondary frequency (Hz)", secondary_frequency_var)
+        create_row(24, "secondary_constant_value", "Secondary constant (m)", secondary_constant_var)
+        create_row(25, "secondary_amplitude", "Secondary amplitude / A cap (m)", secondary_amplitude_var)
+        create_row(26, "secondary_offset", "Secondary offset (m)", secondary_offset_var)
+        create_row(27, "secondary_phase_deg", "Secondary phase (deg)", secondary_phase_var)
+        create_row(28, "secondary_frequency_hz", "Secondary frequency (Hz)", secondary_frequency_var)
         create_combo_row(
-            23,
+            29,
             "secondary_sweep_type",
             "Secondary sweep type",
             secondary_sweep_type_var,
             [SWEEP_TYPE_LINEAR, SWEEP_TYPE_LOG],
         )
-        create_row(24, "secondary_sweep_start_hz", "Secondary sweep start (Hz)", secondary_sweep_start_var)
-        create_row(25, "secondary_sweep_end_hz", "Secondary sweep end (Hz)", secondary_sweep_end_var)
-        create_row(26, "secondary_sweep_accel_star", "Secondary sweep a* (m/s^2)", secondary_sweep_accel_star_var)
-        create_row(27, "secondary_ramp_start", "Secondary ramp start (m)", secondary_ramp_start_var)
-        create_row(28, "secondary_ramp_end", "Secondary ramp end (m)", secondary_ramp_end_var)
+        create_row(30, "secondary_sweep_start_hz", "Secondary sweep start (Hz)", secondary_sweep_start_var)
+        create_row(31, "secondary_sweep_end_hz", "Secondary sweep end (Hz)", secondary_sweep_end_var)
+        create_row(32, "secondary_sweep_accel_star", "Secondary sweep a* (m/s^2)", secondary_sweep_accel_star_var)
+        create_row(33, "secondary_s_curve_start", "Secondary S-curve start (m)", secondary_s_curve_start_var)
+        create_row(34, "secondary_s_curve_end", "Secondary S-curve end (m)", secondary_s_curve_end_var)
+        create_row(35, "secondary_s_curve_max_speed", "Secondary S-curve max speed (m/s)", secondary_s_curve_max_speed_var)
         create_row(
-            29,
+            36,
+            "secondary_s_curve_max_acceleration",
+            "Secondary S-curve max accel (m/s^2)",
+            secondary_s_curve_max_acceleration_var,
+        )
+        create_row(37, "secondary_s_curve_max_jerk", "Secondary S-curve max jerk (m/s^3)", secondary_s_curve_max_jerk_var)
+        create_row(38, "secondary_ramp_start", "Secondary ramp start (m)", secondary_ramp_start_var)
+        create_row(39, "secondary_ramp_end", "Secondary ramp end (m)", secondary_ramp_end_var)
+        create_row(
+            40,
             "secondary_multisine_components",
             "Secondary multisine (A,f,phi;...)",
             secondary_multisine_components_var,
@@ -682,6 +706,11 @@ class LayoutMixin:
             "sweep_start_var": sweep_start_var,
             "sweep_end_var": sweep_end_var,
             "sweep_accel_star_var": sweep_accel_star_var,
+            "s_curve_start_var": s_curve_start_var,
+            "s_curve_end_var": s_curve_end_var,
+            "s_curve_max_speed_var": s_curve_max_speed_var,
+            "s_curve_max_acceleration_var": s_curve_max_acceleration_var,
+            "s_curve_max_jerk_var": s_curve_max_jerk_var,
             "ramp_start_var": ramp_start_var,
             "ramp_end_var": ramp_end_var,
             "ramp_speed_var": ramp_speed_var,
@@ -704,6 +733,11 @@ class LayoutMixin:
             "secondary_sweep_start_var": secondary_sweep_start_var,
             "secondary_sweep_end_var": secondary_sweep_end_var,
             "secondary_sweep_accel_star_var": secondary_sweep_accel_star_var,
+            "secondary_s_curve_start_var": secondary_s_curve_start_var,
+            "secondary_s_curve_end_var": secondary_s_curve_end_var,
+            "secondary_s_curve_max_speed_var": secondary_s_curve_max_speed_var,
+            "secondary_s_curve_max_acceleration_var": secondary_s_curve_max_acceleration_var,
+            "secondary_s_curve_max_jerk_var": secondary_s_curve_max_jerk_var,
             "secondary_ramp_start_var": secondary_ramp_start_var,
             "secondary_ramp_end_var": secondary_ramp_end_var,
             "secondary_multisine_components_var": secondary_multisine_components_var,

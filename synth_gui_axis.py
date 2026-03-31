@@ -328,6 +328,11 @@ class AxisEditorMixin:
         ui["sweep_start_var"].set(f"{params.sweep_start_hz:.6f}")
         ui["sweep_end_var"].set(f"{params.sweep_end_hz:.6f}")
         ui["sweep_accel_star_var"].set(f"{params.sweep_accel_star:.6f}")
+        ui["s_curve_start_var"].set(f"{params.s_curve_start:.6f}")
+        ui["s_curve_end_var"].set(f"{params.s_curve_end:.6f}")
+        ui["s_curve_max_speed_var"].set(f"{params.s_curve_max_speed:.6f}")
+        ui["s_curve_max_acceleration_var"].set(f"{params.s_curve_max_acceleration:.6f}")
+        ui["s_curve_max_jerk_var"].set(f"{params.s_curve_max_jerk:.6f}")
         ui["ramp_start_var"].set(f"{params.ramp_start:.6f}")
         ui["ramp_end_var"].set(f"{params.ramp_end:.6f}")
         if section.duration_s > 0:
@@ -348,6 +353,11 @@ class AxisEditorMixin:
         ui["secondary_sweep_start_var"].set(f"{params.secondary_sweep_start_hz:.6f}")
         ui["secondary_sweep_end_var"].set(f"{params.secondary_sweep_end_hz:.6f}")
         ui["secondary_sweep_accel_star_var"].set(f"{params.secondary_sweep_accel_star:.6f}")
+        ui["secondary_s_curve_start_var"].set(f"{params.secondary_s_curve_start:.6f}")
+        ui["secondary_s_curve_end_var"].set(f"{params.secondary_s_curve_end:.6f}")
+        ui["secondary_s_curve_max_speed_var"].set(f"{params.secondary_s_curve_max_speed:.6f}")
+        ui["secondary_s_curve_max_acceleration_var"].set(f"{params.secondary_s_curve_max_acceleration:.6f}")
+        ui["secondary_s_curve_max_jerk_var"].set(f"{params.secondary_s_curve_max_jerk:.6f}")
         ui["secondary_ramp_start_var"].set(f"{params.secondary_ramp_start:.6f}")
         ui["secondary_ramp_end_var"].set(f"{params.secondary_ramp_end:.6f}")
         ui["secondary_multisine_components_var"].set(str(params.secondary_multisine_components))
@@ -395,7 +405,22 @@ class AxisEditorMixin:
             MODE_CONSTANT: {"constant_value"},
             MODE_RAMP: {"ramp_start", "ramp_end", "ramp_speed"},
             MODE_SINE: {"amplitude", "offset", "phase_deg", "frequency_hz"},
-            MODE_SWEEP: {"amplitude", "offset", "phase_deg", "sweep_type", "sweep_start_hz", "sweep_end_hz", "sweep_accel_star"},
+            MODE_S_CURVE: {
+                "s_curve_start",
+                "s_curve_end",
+                "s_curve_max_speed",
+                "s_curve_max_acceleration",
+                "s_curve_max_jerk",
+            },
+            MODE_SWEEP: {
+                "amplitude",
+                "offset",
+                "phase_deg",
+                "sweep_type",
+                "sweep_start_hz",
+                "sweep_end_hz",
+                "sweep_accel_star",
+            },
             MODE_MULTISINE: {"offset", "multisine_components"},
         }
         visible_secondary_by_mode = {
@@ -410,6 +435,13 @@ class AxisEditorMixin:
                 "secondary_sweep_start_hz",
                 "secondary_sweep_end_hz",
                 "secondary_sweep_accel_star",
+            },
+            MODE_S_CURVE: {
+                "secondary_s_curve_start",
+                "secondary_s_curve_end",
+                "secondary_s_curve_max_speed",
+                "secondary_s_curve_max_acceleration",
+                "secondary_s_curve_max_jerk",
             },
             MODE_MULTISINE: {"secondary_offset", "secondary_multisine_components"},
         }
@@ -445,6 +477,8 @@ class AxisEditorMixin:
                     lock_field = "secondary_constant_value"
                 elif secondary_mode == MODE_RAMP:
                     lock_field = "secondary_ramp_start"
+                elif secondary_mode == MODE_S_CURVE:
+                    lock_field = "secondary_s_curve_start"
                 elif secondary_mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
                     lock_field = "secondary_offset"
             else:
@@ -452,6 +486,8 @@ class AxisEditorMixin:
                     lock_field = "constant_value"
                 elif mode == MODE_RAMP:
                     lock_field = "ramp_start"
+                elif mode == MODE_S_CURVE:
+                    lock_field = "s_curve_start"
                 elif mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
                     lock_field = "offset"
 
@@ -608,6 +644,46 @@ class AxisEditorMixin:
                 raise ValueError(f"{axis_label}: sweep a* cannot be negative.")
             if params.sweep_type == SWEEP_TYPE_LOG and (params.sweep_start_hz <= 0 or params.sweep_end_hz <= 0):
                 raise ValueError(f"{axis_label}: logarithmic sweep requires start/end frequencies > 0.")
+        elif mode == MODE_S_CURVE:
+            params.s_curve_start = self._parse_float(f"{axis_label} S-curve start", ui["s_curve_start_var"].get())
+            params.s_curve_end = self._parse_float(f"{axis_label} S-curve end", ui["s_curve_end_var"].get())
+            params.s_curve_max_speed = self._parse_float(
+                f"{axis_label} S-curve max speed",
+                ui["s_curve_max_speed_var"].get(),
+            )
+            params.s_curve_max_acceleration = self._parse_float(
+                f"{axis_label} S-curve max acceleration",
+                ui["s_curve_max_acceleration_var"].get(),
+            )
+            params.s_curve_max_jerk = self._parse_float(
+                f"{axis_label} S-curve max jerk",
+                ui["s_curve_max_jerk_var"].get(),
+            )
+            if params.s_curve_max_speed <= 0:
+                raise ValueError(f"{axis_label}: S-curve max speed must be > 0.")
+            if params.s_curve_max_acceleration <= 0:
+                raise ValueError(f"{axis_label}: S-curve max acceleration must be > 0.")
+            if params.s_curve_max_jerk <= 0:
+                raise ValueError(f"{axis_label}: S-curve max jerk must be > 0.")
+            delta = abs(params.s_curve_end - params.s_curve_start)
+            required_speed = delta * 1.875 / duration_s
+            required_acceleration = delta * 5.773502691896258 / (duration_s * duration_s)
+            required_jerk = delta * 60.0 / (duration_s * duration_s * duration_s)
+            if required_speed > params.s_curve_max_speed + 1e-12:
+                raise ValueError(
+                    f"{axis_label}: S-curve requires peak speed {required_speed:.6g} m/s "
+                    f"(limit {params.s_curve_max_speed:.6g} m/s)."
+                )
+            if required_acceleration > params.s_curve_max_acceleration + 1e-12:
+                raise ValueError(
+                    f"{axis_label}: S-curve requires peak acceleration {required_acceleration:.6g} m/s^2 "
+                    f"(limit {params.s_curve_max_acceleration:.6g} m/s^2)."
+                )
+            if required_jerk > params.s_curve_max_jerk + 1e-12:
+                raise ValueError(
+                    f"{axis_label}: S-curve requires peak jerk {required_jerk:.6g} m/s^3 "
+                    f"(limit {params.s_curve_max_jerk:.6g} m/s^3)."
+                )
         elif mode == MODE_MULTISINE:
             params.offset = self._parse_float(f"{axis_label} offset", ui["offset_var"].get())
             params.multisine_components = str(ui["multisine_components_var"].get()).strip()
@@ -697,6 +773,52 @@ class AxisEditorMixin:
                     params.secondary_sweep_start_hz <= 0 or params.secondary_sweep_end_hz <= 0
                 ):
                     raise ValueError(f"{axis_label}: secondary logarithmic sweep requires start/end frequencies > 0.")
+            elif secondary_mode == MODE_S_CURVE:
+                params.secondary_s_curve_start = self._parse_float(
+                    f"{axis_label} secondary S-curve start",
+                    ui["secondary_s_curve_start_var"].get(),
+                )
+                params.secondary_s_curve_end = self._parse_float(
+                    f"{axis_label} secondary S-curve end",
+                    ui["secondary_s_curve_end_var"].get(),
+                )
+                params.secondary_s_curve_max_speed = self._parse_float(
+                    f"{axis_label} secondary S-curve max speed",
+                    ui["secondary_s_curve_max_speed_var"].get(),
+                )
+                params.secondary_s_curve_max_acceleration = self._parse_float(
+                    f"{axis_label} secondary S-curve max acceleration",
+                    ui["secondary_s_curve_max_acceleration_var"].get(),
+                )
+                params.secondary_s_curve_max_jerk = self._parse_float(
+                    f"{axis_label} secondary S-curve max jerk",
+                    ui["secondary_s_curve_max_jerk_var"].get(),
+                )
+                if params.secondary_s_curve_max_speed <= 0:
+                    raise ValueError(f"{axis_label}: secondary S-curve max speed must be > 0.")
+                if params.secondary_s_curve_max_acceleration <= 0:
+                    raise ValueError(f"{axis_label}: secondary S-curve max acceleration must be > 0.")
+                if params.secondary_s_curve_max_jerk <= 0:
+                    raise ValueError(f"{axis_label}: secondary S-curve max jerk must be > 0.")
+                secondary_delta = abs(params.secondary_s_curve_end - params.secondary_s_curve_start)
+                required_secondary_speed = secondary_delta * 1.875 / duration_s
+                required_secondary_acceleration = secondary_delta * 5.773502691896258 / (duration_s * duration_s)
+                required_secondary_jerk = secondary_delta * 60.0 / (duration_s * duration_s * duration_s)
+                if required_secondary_speed > params.secondary_s_curve_max_speed + 1e-12:
+                    raise ValueError(
+                        f"{axis_label}: secondary S-curve requires peak speed {required_secondary_speed:.6g} m/s "
+                        f"(limit {params.secondary_s_curve_max_speed:.6g} m/s)."
+                    )
+                if required_secondary_acceleration > params.secondary_s_curve_max_acceleration + 1e-12:
+                    raise ValueError(
+                        f"{axis_label}: secondary S-curve requires peak acceleration {required_secondary_acceleration:.6g} m/s^2 "
+                        f"(limit {params.secondary_s_curve_max_acceleration:.6g} m/s^2)."
+                    )
+                if required_secondary_jerk > params.secondary_s_curve_max_jerk + 1e-12:
+                    raise ValueError(
+                        f"{axis_label}: secondary S-curve requires peak jerk {required_secondary_jerk:.6g} m/s^3 "
+                        f"(limit {params.secondary_s_curve_max_jerk:.6g} m/s^3)."
+                    )
             elif secondary_mode == MODE_MULTISINE:
                 params.secondary_offset = self._parse_float(
                     f"{axis_label} secondary offset",
@@ -790,6 +912,8 @@ class AxisEditorMixin:
                 ui["secondary_constant_var"].set(f"{params.secondary_constant_value:.6f}")
             elif params.secondary_mode == MODE_RAMP:
                 ui["secondary_ramp_start_var"].set(f"{params.secondary_ramp_start:.6f}")
+            elif params.secondary_mode == MODE_S_CURVE:
+                ui["secondary_s_curve_start_var"].set(f"{params.secondary_s_curve_start:.6f}")
             elif params.secondary_mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
                 ui["secondary_offset_var"].set(f"{params.secondary_offset:.6f}")
         else:
@@ -798,6 +922,8 @@ class AxisEditorMixin:
             elif params.mode == MODE_RAMP:
                 ui["ramp_start_var"].set(f"{params.ramp_start:.6f}")
                 self._apply_ramp_speed_coupling(axis, changed_field="ramp_start")
+            elif params.mode == MODE_S_CURVE:
+                ui["s_curve_start_var"].set(f"{params.s_curve_start:.6f}")
             elif params.mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
                 ui["offset_var"].set(f"{params.offset:.6f}")
         self._suspend_events = False
