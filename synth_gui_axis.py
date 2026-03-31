@@ -327,6 +327,7 @@ class AxisEditorMixin:
         ui["sweep_type_var"].set(params.sweep_type)
         ui["sweep_start_var"].set(f"{params.sweep_start_hz:.6f}")
         ui["sweep_end_var"].set(f"{params.sweep_end_hz:.6f}")
+        ui["sweep_accel_star_var"].set(f"{params.sweep_accel_star:.6f}")
         ui["ramp_start_var"].set(f"{params.ramp_start:.6f}")
         ui["ramp_end_var"].set(f"{params.ramp_end:.6f}")
         if section.duration_s > 0:
@@ -346,6 +347,7 @@ class AxisEditorMixin:
         ui["secondary_sweep_type_var"].set(params.secondary_sweep_type)
         ui["secondary_sweep_start_var"].set(f"{params.secondary_sweep_start_hz:.6f}")
         ui["secondary_sweep_end_var"].set(f"{params.secondary_sweep_end_hz:.6f}")
+        ui["secondary_sweep_accel_star_var"].set(f"{params.secondary_sweep_accel_star:.6f}")
         ui["secondary_ramp_start_var"].set(f"{params.secondary_ramp_start:.6f}")
         ui["secondary_ramp_end_var"].set(f"{params.secondary_ramp_end:.6f}")
         ui["secondary_multisine_components_var"].set(str(params.secondary_multisine_components))
@@ -393,7 +395,7 @@ class AxisEditorMixin:
             MODE_CONSTANT: {"constant_value"},
             MODE_RAMP: {"ramp_start", "ramp_end", "ramp_speed"},
             MODE_SINE: {"amplitude", "offset", "phase_deg", "frequency_hz"},
-            MODE_SWEEP: {"amplitude", "offset", "phase_deg", "sweep_type", "sweep_start_hz", "sweep_end_hz"},
+            MODE_SWEEP: {"amplitude", "offset", "phase_deg", "sweep_type", "sweep_start_hz", "sweep_end_hz", "sweep_accel_star"},
             MODE_MULTISINE: {"offset", "multisine_components"},
         }
         visible_secondary_by_mode = {
@@ -407,6 +409,7 @@ class AxisEditorMixin:
                 "secondary_sweep_type",
                 "secondary_sweep_start_hz",
                 "secondary_sweep_end_hz",
+                "secondary_sweep_accel_star",
             },
             MODE_MULTISINE: {"secondary_offset", "secondary_multisine_components"},
         }
@@ -596,10 +599,13 @@ class AxisEditorMixin:
             params.sweep_type = self._parse_sweep_type(f"{axis_label} sweep type", ui["sweep_type_var"].get())
             params.sweep_start_hz = self._parse_float(f"{axis_label} sweep start", ui["sweep_start_var"].get())
             params.sweep_end_hz = self._parse_float(f"{axis_label} sweep end", ui["sweep_end_var"].get())
+            params.sweep_accel_star = self._parse_float(f"{axis_label} sweep a*", ui["sweep_accel_star_var"].get())
             if params.amplitude < 0:
                 raise ValueError(f"{axis_label}: amplitude cannot be negative.")
             if params.sweep_start_hz < 0 or params.sweep_end_hz < 0:
                 raise ValueError(f"{axis_label}: sweep frequencies cannot be negative.")
+            if params.sweep_accel_star < 0:
+                raise ValueError(f"{axis_label}: sweep a* cannot be negative.")
             if params.sweep_type == SWEEP_TYPE_LOG and (params.sweep_start_hz <= 0 or params.sweep_end_hz <= 0):
                 raise ValueError(f"{axis_label}: logarithmic sweep requires start/end frequencies > 0.")
         elif mode == MODE_MULTISINE:
@@ -677,10 +683,16 @@ class AxisEditorMixin:
                     f"{axis_label} secondary sweep end",
                     ui["secondary_sweep_end_var"].get(),
                 )
+                params.secondary_sweep_accel_star = self._parse_float(
+                    f"{axis_label} secondary sweep a*",
+                    ui["secondary_sweep_accel_star_var"].get(),
+                )
                 if params.secondary_amplitude < 0:
                     raise ValueError(f"{axis_label}: secondary amplitude cannot be negative.")
                 if params.secondary_sweep_start_hz < 0 or params.secondary_sweep_end_hz < 0:
                     raise ValueError(f"{axis_label}: secondary sweep frequencies cannot be negative.")
+                if params.secondary_sweep_accel_star < 0:
+                    raise ValueError(f"{axis_label}: secondary sweep a* cannot be negative.")
                 if params.secondary_sweep_type == SWEEP_TYPE_LOG and (
                     params.secondary_sweep_start_hz <= 0 or params.secondary_sweep_end_hz <= 0
                 ):

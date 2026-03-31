@@ -49,6 +49,7 @@ VALID_SWEEP_TYPES = (SWEEP_TYPE_LINEAR, SWEEP_TYPE_LOG)
 
 DEFAULT_MULTISINE_COMPONENTS = "0.01,1.0,0.0; 0.005,3.0,90.0"
 DEFAULT_SECONDARY_MULTISINE_COMPONENTS = "0.0,1.0,0.0"
+DEFAULT_SWEEP_ACCEL_STAR = 1.0e12
 
 EAT_AWAY_LEFT = "left"
 EAT_AWAY_RIGHT = "right"
@@ -72,6 +73,7 @@ class AxisSectionParams:
     sweep_type: str = SWEEP_TYPE_LINEAR
     sweep_start_hz: float = 0.5
     sweep_end_hz: float = 5.0
+    sweep_accel_star: float = DEFAULT_SWEEP_ACCEL_STAR
     ramp_start: float = 0.0
     ramp_end: float = 0.01
     ramp_speed_mps: float = 0.002
@@ -87,6 +89,7 @@ class AxisSectionParams:
     secondary_sweep_type: str = SWEEP_TYPE_LINEAR
     secondary_sweep_start_hz: float = 0.5
     secondary_sweep_end_hz: float = 5.0
+    secondary_sweep_accel_star: float = DEFAULT_SWEEP_ACCEL_STAR
     secondary_ramp_start: float = 0.0
     secondary_ramp_end: float = 0.0
     secondary_constant_value: float = 0.0
@@ -240,6 +243,7 @@ def _validate_axis_params(axis_label: str, params: AxisSectionParams) -> None:
         sweep_type=params.sweep_type,
         sweep_start_hz=params.sweep_start_hz,
         sweep_end_hz=params.sweep_end_hz,
+        sweep_accel_star=params.sweep_accel_star,
         multisine_components=params.multisine_components,
     )
     if params.secondary_enabled:
@@ -252,6 +256,7 @@ def _validate_axis_params(axis_label: str, params: AxisSectionParams) -> None:
             sweep_type=params.secondary_sweep_type,
             sweep_start_hz=params.secondary_sweep_start_hz,
             sweep_end_hz=params.secondary_sweep_end_hz,
+            sweep_accel_star=params.secondary_sweep_accel_star,
             multisine_components=params.secondary_multisine_components,
         )
 
@@ -265,6 +270,7 @@ def _validate_waveform_params(
     sweep_type: str,
     sweep_start_hz: float,
     sweep_end_hz: float,
+    sweep_accel_star: float,
     multisine_components: str,
 ) -> None:
     if mode not in VALID_MODES:
@@ -286,6 +292,8 @@ def _validate_waveform_params(
             raise ValueError(
                 f"{axis_label} ({waveform_label}): logarithmic sweep requires start/end frequencies > 0."
             )
+        if sweep_accel_star < 0:
+            raise ValueError(f"{axis_label} ({waveform_label}): sweep a* cannot be negative.")
     if mode == MODE_MULTISINE:
         _parse_multisine_components(multisine_components, f"{axis_label} ({waveform_label})")
 
@@ -389,6 +397,7 @@ def _generate_axis_section(t_local: np.ndarray, duration_s: float, params: AxisS
         sweep_type=params.sweep_type,
         sweep_start_hz=params.sweep_start_hz,
         sweep_end_hz=params.sweep_end_hz,
+        sweep_accel_star=params.sweep_accel_star,
         ramp_start=params.ramp_start,
         ramp_end=params.ramp_end,
         constant_value=params.constant_value,
@@ -406,12 +415,38 @@ def _generate_axis_section(t_local: np.ndarray, duration_s: float, params: AxisS
             sweep_type=params.secondary_sweep_type,
             sweep_start_hz=params.secondary_sweep_start_hz,
             sweep_end_hz=params.secondary_sweep_end_hz,
+            sweep_accel_star=params.secondary_sweep_accel_star,
             ramp_start=params.secondary_ramp_start,
             ramp_end=params.secondary_ramp_end,
             constant_value=params.secondary_constant_value,
             multisine_components=params.secondary_multisine_components,
         )
     return values
+
+
+def _sweep_amplitude_envelope(
+    amplitude_cap: float,
+    sweep_accel_star: float,
+    frequency_hz: np.ndarray,
+) -> np.ndarray:
+    if sweep_accel_star <= 0:
+        return np.zeros_like(frequency_hz, dtype=float)
+
+    omega = 2.0 * math.pi * frequency_hz
+    denom = np.square(omega)
+    accel_limited = np.full_like(frequency_hz, np.inf, dtype=float)
+    np.divide(sweep_accel_star, denom, out=accel_limited, where=denom > 0.0)
+    return np.minimum(amplitude_cap, accel_limited)
+
+
+def _sweep_amplitude_at_frequency(amplitude_cap: float, sweep_accel_star: float, frequency_hz: float) -> float:
+    if sweep_accel_star <= 0:
+        return 0.0
+    omega = 2.0 * math.pi * frequency_hz
+    denom = omega * omega
+    if denom <= 0:
+        return amplitude_cap
+    return min(amplitude_cap, sweep_accel_star / denom)
 
 
 def _generate_waveform(
@@ -425,6 +460,7 @@ def _generate_waveform(
     sweep_type: str,
     sweep_start_hz: float,
     sweep_end_hz: float,
+    sweep_accel_star: float,
     ramp_start: float,
     ramp_end: float,
     constant_value: float,
@@ -451,24 +487,31 @@ def _generate_waveform(
             return np.full_like(t_local, offset + amplitude * math.sin(phase), dtype=float)
         if sweep_type == SWEEP_TYPE_LINEAR:
             k = (sweep_end_hz - sweep_start_hz) / duration_s
+            instant_frequency_hz = sweep_start_hz + k * t_local
             phase = 2.0 * math.pi * (sweep_start_hz * t_local + 0.5 * k * t_local * t_local) + phase_rad
-            return offset + amplitude * np.sin(phase)
+            envelope = _sweep_amplitude_envelope(amplitude, sweep_accel_star, instant_frequency_hz)
+            return offset + envelope * np.sin(phase)
         if sweep_type == SWEEP_TYPE_LOG:
             if sweep_start_hz <= 0 or sweep_end_hz <= 0:
                 raise ValueError("Logarithmic sweep requires start/end frequencies > 0.")
             ratio = sweep_end_hz / sweep_start_hz
             if math.isclose(ratio, 1.0, rel_tol=1e-12, abs_tol=1e-12):
                 phase = 2.0 * math.pi * sweep_start_hz * t_local + phase_rad
-                return offset + amplitude * np.sin(phase)
+                instant_frequency_hz = np.full_like(t_local, sweep_start_hz, dtype=float)
+                envelope = _sweep_amplitude_envelope(amplitude, sweep_accel_star, instant_frequency_hz)
+                return offset + envelope * np.sin(phase)
             log_ratio = math.log(ratio)
+            time_ratio = t_local / duration_s
+            instant_frequency_hz = sweep_start_hz * np.exp(time_ratio * log_ratio)
             phase = (
                 2.0
                 * math.pi
                 * (sweep_start_hz * duration_s / log_ratio)
-                * np.expm1((t_local / duration_s) * log_ratio)
+                * np.expm1(time_ratio * log_ratio)
                 + phase_rad
             )
-            return offset + amplitude * np.sin(phase)
+            envelope = _sweep_amplitude_envelope(amplitude, sweep_accel_star, instant_frequency_hz)
+            return offset + envelope * np.sin(phase)
         raise ValueError(f"Unsupported sweep type: {sweep_type}")
 
     if mode == MODE_MULTISINE:
@@ -487,6 +530,8 @@ def _waveform_start_value(
     amplitude: float,
     offset: float,
     phase_deg: float,
+    sweep_start_hz: float,
+    sweep_accel_star: float,
     ramp_start: float,
     constant_value: float,
     multisine_components: str,
@@ -495,8 +540,11 @@ def _waveform_start_value(
         return float(constant_value)
     if mode == MODE_RAMP:
         return float(ramp_start)
-    if mode in (MODE_SINE, MODE_SWEEP):
+    if mode == MODE_SINE:
         return float(offset + amplitude * math.sin(math.radians(phase_deg)))
+    if mode == MODE_SWEEP:
+        effective_amplitude = _sweep_amplitude_at_frequency(amplitude, sweep_accel_star, sweep_start_hz)
+        return float(offset + effective_amplitude * math.sin(math.radians(phase_deg)))
     if mode == MODE_MULTISINE:
         components = _parse_multisine_components(multisine_components)
         base = sum(comp_amp * math.sin(math.radians(comp_phase)) for comp_amp, _comp_f, comp_phase in components)
@@ -781,6 +829,8 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
             amplitude=params.amplitude,
             offset=params.offset,
             phase_deg=params.phase_deg,
+            sweep_start_hz=params.sweep_start_hz,
+            sweep_accel_star=params.sweep_accel_star,
             ramp_start=params.ramp_start,
             constant_value=params.constant_value,
             multisine_components=params.multisine_components,
@@ -791,10 +841,17 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
                 params.secondary_constant_value = target_secondary_start
             elif params.secondary_mode == MODE_RAMP:
                 params.secondary_ramp_start = target_secondary_start
-            elif params.secondary_mode in (MODE_SINE, MODE_SWEEP):
+            elif params.secondary_mode == MODE_SINE:
                 params.secondary_offset = target_secondary_start - (
                     params.secondary_amplitude * math.sin(math.radians(params.secondary_phase_deg))
                 )
+            elif params.secondary_mode == MODE_SWEEP:
+                secondary_start_wave = _sweep_amplitude_at_frequency(
+                    params.secondary_amplitude,
+                    params.secondary_sweep_accel_star,
+                    params.secondary_sweep_start_hz,
+                ) * math.sin(math.radians(params.secondary_phase_deg))
+                params.secondary_offset = target_secondary_start - secondary_start_wave
             elif params.secondary_mode == MODE_MULTISINE:
                 components = _parse_multisine_components(params.secondary_multisine_components)
                 base_at_t0 = sum(
@@ -808,8 +865,15 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
             params.constant_value = target_primary_start
         elif params.mode == MODE_RAMP:
             params.ramp_start = target_primary_start
-        elif params.mode in (MODE_SINE, MODE_SWEEP):
+        elif params.mode == MODE_SINE:
             params.offset = target_primary_start - (params.amplitude * math.sin(math.radians(params.phase_deg)))
+        elif params.mode == MODE_SWEEP:
+            primary_start_wave = _sweep_amplitude_at_frequency(
+                params.amplitude,
+                params.sweep_accel_star,
+                params.sweep_start_hz,
+            ) * math.sin(math.radians(params.phase_deg))
+            params.offset = target_primary_start - primary_start_wave
         elif params.mode == MODE_MULTISINE:
             components = _parse_multisine_components(params.multisine_components)
             base_at_t0 = sum(amplitude * math.sin(math.radians(phase_deg)) for amplitude, _f, phase_deg in components)

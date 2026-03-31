@@ -79,6 +79,7 @@ def _params_to_dict(params: AxisSectionParams) -> Dict[str, Any]:
         "sweep_type": params.sweep_type,
         "sweep_start_hz": params.sweep_start_hz,
         "sweep_end_hz": params.sweep_end_hz,
+        "sweep_accel_star": params.sweep_accel_star,
         "ramp_start": params.ramp_start,
         "ramp_end": params.ramp_end,
         "ramp_speed_mps": params.ramp_speed_mps,
@@ -94,6 +95,7 @@ def _params_to_dict(params: AxisSectionParams) -> Dict[str, Any]:
         "secondary_sweep_type": params.secondary_sweep_type,
         "secondary_sweep_start_hz": params.secondary_sweep_start_hz,
         "secondary_sweep_end_hz": params.secondary_sweep_end_hz,
+        "secondary_sweep_accel_star": params.secondary_sweep_accel_star,
         "secondary_ramp_start": params.secondary_ramp_start,
         "secondary_ramp_end": params.secondary_ramp_end,
         "secondary_constant_value": params.secondary_constant_value,
@@ -112,6 +114,7 @@ def _params_from_dict(data: Mapping[str, Any], prefix: str) -> AxisSectionParams
         sweep_type=_as_str(f"{prefix}.sweep_type", data.get("sweep_type", defaults.sweep_type)),
         sweep_start_hz=_as_float(f"{prefix}.sweep_start_hz", data.get("sweep_start_hz")),
         sweep_end_hz=_as_float(f"{prefix}.sweep_end_hz", data.get("sweep_end_hz")),
+        sweep_accel_star=_as_float(f"{prefix}.sweep_accel_star", data.get("sweep_accel_star", defaults.sweep_accel_star)),
         ramp_start=_as_float(f"{prefix}.ramp_start", data.get("ramp_start")),
         ramp_end=_as_float(f"{prefix}.ramp_end", data.get("ramp_end")),
         ramp_speed_mps=_as_float(f"{prefix}.ramp_speed_mps", data.get("ramp_speed_mps", defaults.ramp_speed_mps)),
@@ -153,6 +156,10 @@ def _params_from_dict(data: Mapping[str, Any], prefix: str) -> AxisSectionParams
         secondary_sweep_end_hz=_as_float(
             f"{prefix}.secondary_sweep_end_hz",
             data.get("secondary_sweep_end_hz", defaults.secondary_sweep_end_hz),
+        ),
+        secondary_sweep_accel_star=_as_float(
+            f"{prefix}.secondary_sweep_accel_star",
+            data.get("secondary_sweep_accel_star", defaults.secondary_sweep_accel_star),
         ),
         secondary_ramp_start=_as_float(
             f"{prefix}.secondary_ramp_start",
