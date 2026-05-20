@@ -341,6 +341,9 @@ class AxisEditorMixin:
             ramp_speed = params.ramp_speed_mps
         ui["ramp_speed_var"].set(f"{ramp_speed:.6f}")
         ui["ramp_lock_speed_var"].set(bool(params.ramp_lock_speed))
+        ui["constant_accel_start_var"].set(f"{params.constant_accel_start:.6f}")
+        ui["constant_accel_initial_speed_var"].set(f"{params.constant_accel_initial_speed:.6f}")
+        ui["constant_accel_acceleration_var"].set(f"{params.constant_accel_acceleration:.6f}")
         ui["multisine_components_var"].set(str(params.multisine_components))
         ui["secondary_enabled_var"].set(bool(params.secondary_enabled))
         ui["secondary_mode_var"].set(params.secondary_mode)
@@ -360,6 +363,13 @@ class AxisEditorMixin:
         ui["secondary_s_curve_max_jerk_var"].set(f"{params.secondary_s_curve_max_jerk:.6f}")
         ui["secondary_ramp_start_var"].set(f"{params.secondary_ramp_start:.6f}")
         ui["secondary_ramp_end_var"].set(f"{params.secondary_ramp_end:.6f}")
+        ui["secondary_constant_accel_start_var"].set(f"{params.secondary_constant_accel_start:.6f}")
+        ui["secondary_constant_accel_initial_speed_var"].set(
+            f"{params.secondary_constant_accel_initial_speed:.6f}"
+        )
+        ui["secondary_constant_accel_acceleration_var"].set(
+            f"{params.secondary_constant_accel_acceleration:.6f}"
+        )
         ui["secondary_multisine_components_var"].set(str(params.secondary_multisine_components))
         self._suspend_events = False
 
@@ -404,6 +414,11 @@ class AxisEditorMixin:
         visible_primary_by_mode = {
             MODE_CONSTANT: {"constant_value"},
             MODE_RAMP: {"ramp_start", "ramp_end", "ramp_speed"},
+            MODE_CONSTANT_ACCELERATION: {
+                "constant_accel_start",
+                "constant_accel_initial_speed",
+                "constant_accel_acceleration",
+            },
             MODE_SINE: {"amplitude", "offset", "phase_deg", "frequency_hz"},
             MODE_S_CURVE: {
                 "s_curve_start",
@@ -426,6 +441,11 @@ class AxisEditorMixin:
         visible_secondary_by_mode = {
             MODE_CONSTANT: {"secondary_constant_value"},
             MODE_RAMP: {"secondary_ramp_start", "secondary_ramp_end"},
+            MODE_CONSTANT_ACCELERATION: {
+                "secondary_constant_accel_start",
+                "secondary_constant_accel_initial_speed",
+                "secondary_constant_accel_acceleration",
+            },
             MODE_SINE: {"secondary_amplitude", "secondary_offset", "secondary_phase_deg", "secondary_frequency_hz"},
             MODE_SWEEP: {
                 "secondary_amplitude",
@@ -477,6 +497,8 @@ class AxisEditorMixin:
                     lock_field = "secondary_constant_value"
                 elif secondary_mode == MODE_RAMP:
                     lock_field = "secondary_ramp_start"
+                elif secondary_mode == MODE_CONSTANT_ACCELERATION:
+                    lock_field = "secondary_constant_accel_start"
                 elif secondary_mode == MODE_S_CURVE:
                     lock_field = "secondary_s_curve_start"
                 elif secondary_mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
@@ -486,6 +508,8 @@ class AxisEditorMixin:
                     lock_field = "constant_value"
                 elif mode == MODE_RAMP:
                     lock_field = "ramp_start"
+                elif mode == MODE_CONSTANT_ACCELERATION:
+                    lock_field = "constant_accel_start"
                 elif mode == MODE_S_CURVE:
                     lock_field = "s_curve_start"
                 elif mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
@@ -619,6 +643,19 @@ class AxisEditorMixin:
                 params.ramp_speed_mps = (params.ramp_end - params.ramp_start) / duration_s
             if params.ramp_lock_speed and abs(params.ramp_speed_mps) < 1e-12 and abs(params.ramp_end - params.ramp_start) > 1e-12:
                 raise ValueError(f"{axis_label}: with locked speed = 0, ramp start and end must be equal.")
+        elif mode == MODE_CONSTANT_ACCELERATION:
+            params.constant_accel_start = self._parse_float(
+                f"{axis_label} constant acceleration start",
+                ui["constant_accel_start_var"].get(),
+            )
+            params.constant_accel_initial_speed = self._parse_float(
+                f"{axis_label} constant acceleration initial speed",
+                ui["constant_accel_initial_speed_var"].get(),
+            )
+            params.constant_accel_acceleration = self._parse_float(
+                f"{axis_label} constant acceleration",
+                ui["constant_accel_acceleration_var"].get(),
+            )
         elif mode == MODE_SINE:
             params.amplitude = self._parse_float(f"{axis_label} amplitude", ui["amplitude_var"].get())
             params.offset = self._parse_float(f"{axis_label} offset", ui["offset_var"].get())
@@ -712,6 +749,19 @@ class AxisEditorMixin:
                 params.secondary_ramp_end = self._parse_float(
                     f"{axis_label} secondary ramp end",
                     ui["secondary_ramp_end_var"].get(),
+                )
+            elif secondary_mode == MODE_CONSTANT_ACCELERATION:
+                params.secondary_constant_accel_start = self._parse_float(
+                    f"{axis_label} secondary constant acceleration start",
+                    ui["secondary_constant_accel_start_var"].get(),
+                )
+                params.secondary_constant_accel_initial_speed = self._parse_float(
+                    f"{axis_label} secondary constant acceleration initial speed",
+                    ui["secondary_constant_accel_initial_speed_var"].get(),
+                )
+                params.secondary_constant_accel_acceleration = self._parse_float(
+                    f"{axis_label} secondary constant acceleration",
+                    ui["secondary_constant_accel_acceleration_var"].get(),
                 )
             elif secondary_mode == MODE_SINE:
                 params.secondary_amplitude = self._parse_float(
@@ -912,6 +962,8 @@ class AxisEditorMixin:
                 ui["secondary_constant_var"].set(f"{params.secondary_constant_value:.6f}")
             elif params.secondary_mode == MODE_RAMP:
                 ui["secondary_ramp_start_var"].set(f"{params.secondary_ramp_start:.6f}")
+            elif params.secondary_mode == MODE_CONSTANT_ACCELERATION:
+                ui["secondary_constant_accel_start_var"].set(f"{params.secondary_constant_accel_start:.6f}")
             elif params.secondary_mode == MODE_S_CURVE:
                 ui["secondary_s_curve_start_var"].set(f"{params.secondary_s_curve_start:.6f}")
             elif params.secondary_mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
@@ -922,6 +974,8 @@ class AxisEditorMixin:
             elif params.mode == MODE_RAMP:
                 ui["ramp_start_var"].set(f"{params.ramp_start:.6f}")
                 self._apply_ramp_speed_coupling(axis, changed_field="ramp_start")
+            elif params.mode == MODE_CONSTANT_ACCELERATION:
+                ui["constant_accel_start_var"].set(f"{params.constant_accel_start:.6f}")
             elif params.mode == MODE_S_CURVE:
                 ui["s_curve_start_var"].set(f"{params.s_curve_start:.6f}")
             elif params.mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):

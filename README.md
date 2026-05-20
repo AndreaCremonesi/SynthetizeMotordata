@@ -15,6 +15,8 @@ The app previews position/velocity/acceleration/path, validates limits, supports
   - `sweep` (linear or logarithmic frequency sweep in Hz)
   - `ramp`
     - Optional ramp speed + `Lock speed` coupling (duration <-> end position)
+  - `constant_acceleration`
+    - Position is generated from start position, initial speed, and constant acceleration
   - `constant`
   - `multisine` (sum of multiple sine terms `A,f,phi; ...`)
   - Optional secondary waveform summed with the primary waveform (all mode combinations)

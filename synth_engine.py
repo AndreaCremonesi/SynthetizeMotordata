@@ -41,9 +41,18 @@ MODE_SINE = "sine"
 MODE_SWEEP = "sweep"
 MODE_S_CURVE = "s_curve"
 MODE_RAMP = "ramp"
+MODE_CONSTANT_ACCELERATION = "constant_acceleration"
 MODE_CONSTANT = "constant"
 MODE_MULTISINE = "multisine"
-VALID_MODES = (MODE_SINE, MODE_SWEEP, MODE_S_CURVE, MODE_RAMP, MODE_CONSTANT, MODE_MULTISINE)
+VALID_MODES = (
+    MODE_SINE,
+    MODE_SWEEP,
+    MODE_S_CURVE,
+    MODE_RAMP,
+    MODE_CONSTANT_ACCELERATION,
+    MODE_CONSTANT,
+    MODE_MULTISINE,
+)
 SWEEP_TYPE_LINEAR = "linear"
 SWEEP_TYPE_LOG = "logarithmic"
 VALID_SWEEP_TYPES = (SWEEP_TYPE_LINEAR, SWEEP_TYPE_LOG)
@@ -84,6 +93,9 @@ class AxisSectionParams:
     ramp_end: float = 0.01
     ramp_speed_mps: float = 0.002
     ramp_lock_speed: bool = False
+    constant_accel_start: float = 0.0
+    constant_accel_initial_speed: float = 0.0
+    constant_accel_acceleration: float = 0.0
     constant_value: float = 0.0
     multisine_components: str = DEFAULT_MULTISINE_COMPONENTS
     secondary_enabled: bool = False
@@ -103,6 +115,9 @@ class AxisSectionParams:
     secondary_s_curve_max_jerk: float = 10.0
     secondary_ramp_start: float = 0.0
     secondary_ramp_end: float = 0.0
+    secondary_constant_accel_start: float = 0.0
+    secondary_constant_accel_initial_speed: float = 0.0
+    secondary_constant_accel_acceleration: float = 0.0
     secondary_constant_value: float = 0.0
     secondary_multisine_components: str = DEFAULT_SECONDARY_MULTISINE_COMPONENTS
 
@@ -510,6 +525,9 @@ def _generate_axis_section(t_local: np.ndarray, duration_s: float, params: AxisS
         s_curve_max_jerk=params.s_curve_max_jerk,
         ramp_start=params.ramp_start,
         ramp_end=params.ramp_end,
+        constant_accel_start=params.constant_accel_start,
+        constant_accel_initial_speed=params.constant_accel_initial_speed,
+        constant_accel_acceleration=params.constant_accel_acceleration,
         constant_value=params.constant_value,
         multisine_components=params.multisine_components,
     )
@@ -533,6 +551,9 @@ def _generate_axis_section(t_local: np.ndarray, duration_s: float, params: AxisS
             s_curve_max_jerk=params.secondary_s_curve_max_jerk,
             ramp_start=params.secondary_ramp_start,
             ramp_end=params.secondary_ramp_end,
+            constant_accel_start=params.secondary_constant_accel_start,
+            constant_accel_initial_speed=params.secondary_constant_accel_initial_speed,
+            constant_accel_acceleration=params.secondary_constant_accel_acceleration,
             constant_value=params.secondary_constant_value,
             multisine_components=params.secondary_multisine_components,
         )
@@ -584,6 +605,9 @@ def _generate_waveform(
     s_curve_max_jerk: float,
     ramp_start: float,
     ramp_end: float,
+    constant_accel_start: float,
+    constant_accel_initial_speed: float,
+    constant_accel_acceleration: float,
     constant_value: float,
     multisine_components: str,
 ) -> np.ndarray:
@@ -597,6 +621,13 @@ def _generate_waveform(
             return np.full_like(t_local, ramp_start, dtype=float)
         ratio = t_local / duration_s
         return ramp_start + (ramp_end - ramp_start) * ratio
+
+    if mode == MODE_CONSTANT_ACCELERATION:
+        return (
+            constant_accel_start
+            + constant_accel_initial_speed * t_local
+            + 0.5 * constant_accel_acceleration * np.square(t_local)
+        )
 
     if mode == MODE_SINE:
         phase = 2.0 * math.pi * frequency_hz * t_local + phase_rad
@@ -668,6 +699,7 @@ def _waveform_start_value(
     sweep_accel_star: float,
     s_curve_start: float,
     ramp_start: float,
+    constant_accel_start: float,
     constant_value: float,
     multisine_components: str,
 ) -> float:
@@ -675,6 +707,8 @@ def _waveform_start_value(
         return float(constant_value)
     if mode == MODE_RAMP:
         return float(ramp_start)
+    if mode == MODE_CONSTANT_ACCELERATION:
+        return float(constant_accel_start)
     if mode == MODE_SINE:
         return float(offset + amplitude * math.sin(math.radians(phase_deg)))
     if mode == MODE_SWEEP:
@@ -970,6 +1004,7 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
             sweep_accel_star=params.sweep_accel_star,
             s_curve_start=params.s_curve_start,
             ramp_start=params.ramp_start,
+            constant_accel_start=params.constant_accel_start,
             constant_value=params.constant_value,
             multisine_components=params.multisine_components,
         )
@@ -979,6 +1014,8 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
                 params.secondary_constant_value = target_secondary_start
             elif params.secondary_mode == MODE_RAMP:
                 params.secondary_ramp_start = target_secondary_start
+            elif params.secondary_mode == MODE_CONSTANT_ACCELERATION:
+                params.secondary_constant_accel_start = target_secondary_start
             elif params.secondary_mode == MODE_SINE:
                 params.secondary_offset = target_secondary_start - (
                     params.secondary_amplitude * math.sin(math.radians(params.secondary_phase_deg))
@@ -1005,6 +1042,8 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
             params.constant_value = target_primary_start
         elif params.mode == MODE_RAMP:
             params.ramp_start = target_primary_start
+        elif params.mode == MODE_CONSTANT_ACCELERATION:
+            params.constant_accel_start = target_primary_start
         elif params.mode == MODE_SINE:
             params.offset = target_primary_start - (params.amplitude * math.sin(math.radians(params.phase_deg)))
         elif params.mode == MODE_SWEEP:

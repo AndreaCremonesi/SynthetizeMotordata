@@ -89,6 +89,9 @@ def _params_to_dict(params: AxisSectionParams) -> Dict[str, Any]:
         "ramp_end": params.ramp_end,
         "ramp_speed_mps": params.ramp_speed_mps,
         "ramp_lock_speed": params.ramp_lock_speed,
+        "constant_accel_start": params.constant_accel_start,
+        "constant_accel_initial_speed": params.constant_accel_initial_speed,
+        "constant_accel_acceleration": params.constant_accel_acceleration,
         "constant_value": params.constant_value,
         "multisine_components": params.multisine_components,
         "secondary_enabled": params.secondary_enabled,
@@ -108,6 +111,9 @@ def _params_to_dict(params: AxisSectionParams) -> Dict[str, Any]:
         "secondary_s_curve_max_jerk": params.secondary_s_curve_max_jerk,
         "secondary_ramp_start": params.secondary_ramp_start,
         "secondary_ramp_end": params.secondary_ramp_end,
+        "secondary_constant_accel_start": params.secondary_constant_accel_start,
+        "secondary_constant_accel_initial_speed": params.secondary_constant_accel_initial_speed,
+        "secondary_constant_accel_acceleration": params.secondary_constant_accel_acceleration,
         "secondary_constant_value": params.secondary_constant_value,
         "secondary_multisine_components": params.secondary_multisine_components,
     }
@@ -146,6 +152,18 @@ def _params_from_dict(data: Mapping[str, Any], prefix: str) -> AxisSectionParams
         ramp_end=_as_float(f"{prefix}.ramp_end", data.get("ramp_end")),
         ramp_speed_mps=_as_float(f"{prefix}.ramp_speed_mps", data.get("ramp_speed_mps", defaults.ramp_speed_mps)),
         ramp_lock_speed=_as_bool(f"{prefix}.ramp_lock_speed", data.get("ramp_lock_speed", defaults.ramp_lock_speed)),
+        constant_accel_start=_as_float(
+            f"{prefix}.constant_accel_start",
+            data.get("constant_accel_start", defaults.constant_accel_start),
+        ),
+        constant_accel_initial_speed=_as_float(
+            f"{prefix}.constant_accel_initial_speed",
+            data.get("constant_accel_initial_speed", defaults.constant_accel_initial_speed),
+        ),
+        constant_accel_acceleration=_as_float(
+            f"{prefix}.constant_accel_acceleration",
+            data.get("constant_accel_acceleration", defaults.constant_accel_acceleration),
+        ),
         constant_value=_as_float(f"{prefix}.constant_value", data.get("constant_value")),
         multisine_components=_as_str(
             f"{prefix}.multisine_components",
@@ -215,6 +233,24 @@ def _params_from_dict(data: Mapping[str, Any], prefix: str) -> AxisSectionParams
         secondary_ramp_end=_as_float(
             f"{prefix}.secondary_ramp_end",
             data.get("secondary_ramp_end", defaults.secondary_ramp_end),
+        ),
+        secondary_constant_accel_start=_as_float(
+            f"{prefix}.secondary_constant_accel_start",
+            data.get("secondary_constant_accel_start", defaults.secondary_constant_accel_start),
+        ),
+        secondary_constant_accel_initial_speed=_as_float(
+            f"{prefix}.secondary_constant_accel_initial_speed",
+            data.get(
+                "secondary_constant_accel_initial_speed",
+                defaults.secondary_constant_accel_initial_speed,
+            ),
+        ),
+        secondary_constant_accel_acceleration=_as_float(
+            f"{prefix}.secondary_constant_accel_acceleration",
+            data.get(
+                "secondary_constant_accel_acceleration",
+                defaults.secondary_constant_accel_acceleration,
+            ),
         ),
         secondary_constant_value=_as_float(
             f"{prefix}.secondary_constant_value",
