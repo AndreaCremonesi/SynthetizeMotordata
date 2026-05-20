@@ -34,6 +34,7 @@ except ModuleNotFoundError:
 
 PREVIEW_MAX_POINTS = 4000
 PREVIEW_MAX_POINTS_DYNAMICS = 20000
+UNDO_HISTORY_LIMIT = 250
 
 
 class RuntimeMixin:
@@ -76,6 +77,7 @@ class RuntimeMixin:
                 "transition_check",
                 "transition_duration_entry",
                 "transition_eat_combo",
+                "transition_smoothing_combo",
             ):
                 widget = ui.get(key)
                 if widget is not None:
@@ -105,6 +107,240 @@ class RuntimeMixin:
             if not enabled:
                 self._load_selected_item_into_editor(axis)
 
+    def _bind_undo_redo_shortcuts(self) -> None:
+        bindings = (
+            ("<Control-z>", self._on_undo_shortcut),
+            ("<Control-Z>", self._on_undo_shortcut),
+            ("<Control-y>", self._on_redo_shortcut),
+            ("<Control-Y>", self._on_redo_shortcut),
+            ("<Control-Shift-z>", self._on_redo_shortcut),
+            ("<Control-Shift-Z>", self._on_redo_shortcut),
+            ("<Command-z>", self._on_undo_shortcut),
+            ("<Command-Z>", self._on_undo_shortcut),
+            ("<Command-y>", self._on_redo_shortcut),
+            ("<Command-Y>", self._on_redo_shortcut),
+            ("<Command-Shift-z>", self._on_redo_shortcut),
+            ("<Command-Shift-Z>", self._on_redo_shortcut),
+        )
+        for sequence, handler in bindings:
+            try:
+                self.root.bind_all(sequence, handler, add="+")
+            except tk.TclError:
+                continue
+
+    @staticmethod
+    def _normalize_history_row_selection(raw_value: Any) -> Tuple[str, int]:
+        if not isinstance(raw_value, dict):
+            return "none", -1
+        row_type = str(raw_value.get("type", "none"))
+        try:
+            row_index = int(raw_value.get("index", -1))
+        except (TypeError, ValueError):
+            row_index = -1
+        if row_type not in {"section", "transition", "none"}:
+            return "none", -1
+        return row_type, row_index
+
+    def _capture_limit_ui_state(self) -> Dict[str, Dict[str, Any]]:
+        captured: Dict[str, Dict[str, Any]] = {}
+        for axis in ("y", "z"):
+            axis_vars = self.limit_vars.get(axis, {})
+            axis_state: Dict[str, Any] = {}
+            if isinstance(axis_vars, dict):
+                for key, variable in axis_vars.items():
+                    try:
+                        axis_state[key] = variable.get()
+                    except Exception:
+                        continue
+            captured[axis] = axis_state
+        return captured
+
+    def _apply_limit_ui_state(self, state: Any) -> None:
+        if not isinstance(state, dict):
+            return
+        for axis in ("y", "z"):
+            axis_state = state.get(axis, {})
+            axis_vars = self.limit_vars.get(axis, {})
+            if not isinstance(axis_state, dict) or not isinstance(axis_vars, dict):
+                continue
+            for key, variable in axis_vars.items():
+                if key not in axis_state:
+                    continue
+                raw_value = axis_state[key]
+                try:
+                    if isinstance(variable, tk.BooleanVar):
+                        variable.set(self._coerce_saved_bool(raw_value))
+                    else:
+                        variable.set(str(raw_value) if raw_value is not None else "")
+                except Exception:
+                    continue
+
+    def _capture_undo_snapshot(self) -> Dict[str, Any]:
+        selected_rows: Dict[str, Dict[str, Any]] = {}
+        for axis in ("y", "z"):
+            row_type, row_index = self._selected_row_info(axis)
+            selected_rows[axis] = {"type": row_type, "index": row_index}
+
+        sample_rate_scale = float(self.recipe.sample_rate_hz)
+        try:
+            sample_rate_scale = float(self.sample_rate_scale_var.get())
+        except Exception:
+            pass
+
+        return {
+            "recipe": recipe_to_dict(self.recipe),
+            "edit_mode": self.edit_mode_var.get(),
+            "sample_rate_text": self.sample_rate_var.get(),
+            "sample_rate_scale": sample_rate_scale,
+            "position_plot_split": bool(self.position_plot_split_var.get()),
+            "limits_ui": self._capture_limit_ui_state(),
+            "selected_rows": selected_rows,
+        }
+
+    @staticmethod
+    def _snapshot_signature(snapshot: Dict[str, Any]) -> str:
+        return json.dumps(snapshot, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+
+    def _record_undo_state_if_changed(self) -> None:
+        if bool(getattr(self, "_history_replaying", False)):
+            return
+        if not hasattr(self, "_undo_history") or not hasattr(self, "_undo_signatures"):
+            return
+
+        try:
+            snapshot = self._capture_undo_snapshot()
+            signature = self._snapshot_signature(snapshot)
+        except Exception:
+            return
+
+        current_index = int(getattr(self, "_undo_index", -1))
+        history: List[Dict[str, Any]] = self._undo_history
+        signatures: List[str] = self._undo_signatures
+
+        if 0 <= current_index < len(signatures) and signatures[current_index] == signature:
+            return
+
+        if current_index < len(history) - 1:
+            del history[current_index + 1 :]
+            del signatures[current_index + 1 :]
+
+        history.append(snapshot)
+        signatures.append(signature)
+
+        if len(history) > UNDO_HISTORY_LIMIT:
+            overflow = len(history) - UNDO_HISTORY_LIMIT
+            del history[:overflow]
+            del signatures[:overflow]
+
+        self._undo_index = len(history) - 1
+
+    def _reset_undo_redo_history(self) -> None:
+        self._undo_history = []
+        self._undo_signatures = []
+        self._undo_index = -1
+        self._record_undo_state_if_changed()
+
+    def _flush_pending_refresh(self) -> None:
+        if self._pending_refresh_id is None:
+            return
+        try:
+            self.root.after_cancel(self._pending_refresh_id)
+        except tk.TclError:
+            pass
+        self._pending_refresh_id = None
+        self._refresh_preview()
+
+    def _apply_undo_snapshot(self, snapshot: Dict[str, Any]) -> None:
+        if not isinstance(snapshot, dict):
+            return
+
+        self._history_replaying = True
+        try:
+            self._suspend_events = True
+
+            recipe_payload = snapshot.get("recipe", {})
+            if isinstance(recipe_payload, dict):
+                self.recipe = recipe_from_dict(recipe_payload)
+
+            edit_mode = str(snapshot.get("edit_mode", EDIT_MODE_EASY))
+            if edit_mode not in (EDIT_MODE_EASY, EDIT_MODE_EXPERT):
+                edit_mode = EDIT_MODE_EASY
+            self.edit_mode_var.set(edit_mode)
+
+            self.sample_rate_var.set(str(snapshot.get("sample_rate_text", f"{self.recipe.sample_rate_hz:.3f}")))
+            raw_scale = snapshot.get("sample_rate_scale", self.recipe.sample_rate_hz)
+            try:
+                self.sample_rate_scale_var.set(float(raw_scale))
+            except (TypeError, ValueError):
+                self.sample_rate_scale_var.set(float(self.recipe.sample_rate_hz))
+
+            self.position_plot_split_var.set(self._coerce_saved_bool(snapshot.get("position_plot_split", False)))
+            self._apply_limit_ui_state(snapshot.get("limits_ui", {}))
+            self._set_csv_view_mode(False)
+            self._update_position_plot_split_button_text()
+
+            self._refresh_axis_tree("y", select=("section", 0))
+            self._refresh_axis_tree("z", select=("section", 0))
+            selected_rows = snapshot.get("selected_rows", {})
+            if not isinstance(selected_rows, dict):
+                selected_rows = {}
+            for axis in ("y", "z"):
+                row_type, row_index = self._normalize_history_row_selection(selected_rows.get(axis, {}))
+                self._refresh_axis_tree(axis, select=(row_type, row_index))
+                self._load_selected_item_into_editor(axis)
+            self._suspend_events = False
+
+            self._apply_easy_mode_if_needed()
+            self._refresh_preview()
+
+            if 0 <= self._undo_index < len(self._undo_history):
+                normalized_snapshot = self._capture_undo_snapshot()
+                self._undo_history[self._undo_index] = normalized_snapshot
+                self._undo_signatures[self._undo_index] = self._snapshot_signature(normalized_snapshot)
+        finally:
+            self._suspend_events = False
+            self._history_replaying = False
+
+    def _undo_last_action(self) -> bool:
+        self._flush_pending_refresh()
+        self._record_undo_state_if_changed()
+        if self._undo_index <= 0:
+            self._set_status("Nothing to undo.", is_error=False)
+            return False
+
+        self._undo_index -= 1
+        try:
+            self._apply_undo_snapshot(self._undo_history[self._undo_index])
+        except Exception as exc:
+            self._set_status(f"Undo failed: {exc}", is_error=True)
+            return False
+        self._set_status("Undid last change.", is_error=False)
+        return True
+
+    def _redo_last_action(self) -> bool:
+        self._flush_pending_refresh()
+        self._record_undo_state_if_changed()
+        if self._undo_index + 1 >= len(self._undo_history):
+            self._set_status("Nothing to redo.", is_error=False)
+            return False
+
+        self._undo_index += 1
+        try:
+            self._apply_undo_snapshot(self._undo_history[self._undo_index])
+        except Exception as exc:
+            self._set_status(f"Redo failed: {exc}", is_error=True)
+            return False
+        self._set_status("Redid last undone change.", is_error=False)
+        return True
+
+    def _on_undo_shortcut(self, _event: tk.Event) -> str:
+        self._undo_last_action()
+        return "break"
+
+    def _on_redo_shortcut(self, _event: tk.Event) -> str:
+        self._redo_last_action()
+        return "break"
+
     def _on_close_csv_preview(self) -> None:
         if not bool(getattr(self, "csv_view_mode", False)):
             self._set_status("CSV preview is not active.", is_error=False)
@@ -122,7 +358,10 @@ class RuntimeMixin:
         return row_index
 
     def _focus_is_inside_axis_editor(self, axis: str) -> bool:
-        focus_widget = self.root.focus_get()
+        try:
+            focus_widget = self.root.focus_get()
+        except (KeyError, tk.TclError):
+            return False
         if focus_widget is None:
             return False
         ui = self.axis_ui.get(axis, {})
@@ -203,6 +442,7 @@ class RuntimeMixin:
             )
         else:
             self._clear_plots()
+        self._record_undo_state_if_changed()
 
     def _active_plot_tab_index(self) -> int:
         notebook = getattr(self, "plot_notebook", None)
@@ -252,6 +492,7 @@ class RuntimeMixin:
             enabled=bool(transition.enabled),
             duration_s=float(transition.duration_s),
             eat_away_mode=str(transition.eat_away_mode),
+            smoothing_mode=str(transition.smoothing_mode),
             auto_added=bool(transition.auto_added),
             status=str(transition.status),
         )
@@ -327,6 +568,7 @@ class RuntimeMixin:
             transition.enabled = preserved.enabled
             transition.duration_s = preserved.duration_s
             transition.eat_away_mode = preserved.eat_away_mode
+            transition.smoothing_mode = preserved.smoothing_mode
             transition.auto_added = preserved.auto_added
             transition.status = preserved.status
 
@@ -393,6 +635,7 @@ class RuntimeMixin:
                     if not transition.auto_added:
                         transition.duration_s = DEFAULT_TRANSITION_DURATION_S
                         transition.eat_away_mode = EAT_AWAY_BOTH
+                        transition.smoothing_mode = TRANSITION_SMOOTHING_QUINTIC_C2
                         transition.auto_added = True
                     transition.enabled = True
                     changed = True
@@ -774,15 +1017,61 @@ class RuntimeMixin:
 
     def _refresh_preview(self) -> None:
         self._pending_refresh_id = None
+        try:
+            if bool(getattr(self, "csv_view_mode", False)) and getattr(self, "loaded_csv_path", None) is not None:
+                try:
+                    result = self._build_preview_result_from_csv(Path(self.loaded_csv_path))
+                except Exception as exc:
+                    self._last_generated = None
+                    self._set_warning_report(None)
+                    self._clear_plots("CSV preview unavailable")
+                    self._set_status(f"CSV preview failed: {exc}", is_error=True)
+                    return
 
-        if bool(getattr(self, "csv_view_mode", False)) and getattr(self, "loaded_csv_path", None) is not None:
-            try:
-                result = self._build_preview_result_from_csv(Path(self.loaded_csv_path))
-            except Exception as exc:
+                self._last_generated = result
+                self._plot_preview(
+                    t=result["t"],
+                    y=result["y"],
+                    z=result["z"],
+                    y_boundaries=result["y_boundaries"],
+                    z_boundaries=result["z_boundaries"],
+                    show_recipe_overlays=False,
+                )
+                self._set_warning_report(result["report"])
+                sample_rate_hz = float(self.recipe.sample_rate_hz)
+                duration_s = (len(result["t"]) - 1) / sample_rate_hz if len(result["t"]) else 0.0
+                self._set_status(
+                    f"CSV preview updated: {self.loaded_csv_path} ({len(result['t'])} samples, duration {duration_s:.6g}s).",
+                    is_error=False,
+                )
+                return
+
+            if not self._apply_sample_rate_from_ui(show_popup=False):
                 self._last_generated = None
                 self._set_warning_report(None)
-                self._clear_plots("CSV preview unavailable")
-                self._set_status(f"CSV preview failed: {exc}", is_error=True)
+                self._clear_plots("Invalid sample rate")
+                return
+
+            if not self._apply_axis_editor_to_model("y", show_popup=False, refresh_ui=False):
+                self._last_generated = None
+                self._set_warning_report(None)
+                self._clear_plots("Invalid Y section parameters")
+                return
+            if not self._apply_axis_editor_to_model("z", show_popup=False, refresh_ui=False):
+                self._last_generated = None
+                self._set_warning_report(None)
+                self._clear_plots("Invalid Z section parameters")
+                return
+
+            auto_fill_message = self._sync_auto_fill_section()
+
+            try:
+                result = self._generate_current_result()
+            except ValueError as exc:
+                self._last_generated = None
+                self._set_warning_report(None)
+                self._clear_plots("Preview unavailable")
+                self._set_status(str(exc), is_error=True)
                 return
 
             self._last_generated = result
@@ -792,85 +1081,41 @@ class RuntimeMixin:
                 z=result["z"],
                 y_boundaries=result["y_boundaries"],
                 z_boundaries=result["z_boundaries"],
-                show_recipe_overlays=False,
+                show_recipe_overlays=bool(result.get("show_recipe_overlays", True)),
             )
             self._set_warning_report(result["report"])
-            sample_rate_hz = float(self.recipe.sample_rate_hz)
-            duration_s = (len(result["t"]) - 1) / sample_rate_hz if len(result["t"]) else 0.0
-            self._set_status(
-                f"CSV preview updated: {self.loaded_csv_path} ({len(result['t'])} samples, duration {duration_s:.6g}s).",
-                is_error=False,
-            )
-            return
 
-        if not self._apply_sample_rate_from_ui(show_popup=False):
-            self._last_generated = None
-            self._set_warning_report(None)
-            self._clear_plots("Invalid sample rate")
-            return
+            y_sel_before = self._selected_row_info("y")
+            z_sel_before = self._selected_row_info("z")
+            y_editor_has_focus = self._focus_is_inside_axis_editor("y")
+            z_editor_has_focus = self._focus_is_inside_axis_editor("z")
 
-        if not self._apply_axis_editor_to_model("y", show_popup=False, refresh_ui=False):
-            self._last_generated = None
-            self._set_warning_report(None)
-            self._clear_plots("Invalid Y section parameters")
-            return
-        if not self._apply_axis_editor_to_model("z", show_popup=False, refresh_ui=False):
-            self._last_generated = None
-            self._set_warning_report(None)
-            self._clear_plots("Invalid Z section parameters")
-            return
+            self._refresh_axis_tree("y", select=y_sel_before)
+            self._refresh_axis_tree("z", select=z_sel_before)
 
-        auto_fill_message = self._sync_auto_fill_section()
+            y_sel_after = self._selected_row_info("y")
+            z_sel_after = self._selected_row_info("z")
 
-        try:
-            result = self._generate_current_result()
-        except ValueError as exc:
-            self._last_generated = None
-            self._set_warning_report(None)
-            self._clear_plots("Preview unavailable")
-            self._set_status(str(exc), is_error=True)
-            return
+            if not (y_editor_has_focus and y_sel_after == y_sel_before):
+                self._load_selected_item_into_editor("y")
+            if not (z_editor_has_focus and z_sel_after == z_sel_before):
+                self._load_selected_item_into_editor("z")
 
-        self._last_generated = result
-        self._plot_preview(
-            t=result["t"],
-            y=result["y"],
-            z=result["z"],
-            y_boundaries=result["y_boundaries"],
-            z_boundaries=result["z_boundaries"],
-            show_recipe_overlays=bool(result.get("show_recipe_overlays", True)),
-        )
-        self._set_warning_report(result["report"])
-
-        y_sel_before = self._selected_row_info("y")
-        z_sel_before = self._selected_row_info("z")
-        y_editor_has_focus = self._focus_is_inside_axis_editor("y")
-        z_editor_has_focus = self._focus_is_inside_axis_editor("z")
-
-        self._refresh_axis_tree("y", select=y_sel_before)
-        self._refresh_axis_tree("z", select=z_sel_before)
-
-        y_sel_after = self._selected_row_info("y")
-        z_sel_after = self._selected_row_info("z")
-
-        if not (y_editor_has_focus and y_sel_after == y_sel_before):
-            self._load_selected_item_into_editor("y")
-        if not (z_editor_has_focus and z_sel_after == z_sel_before):
-            self._load_selected_item_into_editor("z")
-
-        n = len(result["t"])
-        y_duration = float(result["y_boundaries"][-1]) if result["y_boundaries"] else 0.0
-        z_duration = float(result["z_boundaries"][-1]) if result["z_boundaries"] else 0.0
-        duration = max(y_duration, z_duration)
-        warning_count = len(result["report"].issues)
-        extra = f" {auto_fill_message}" if auto_fill_message else ""
-        if warning_count:
-            self._set_status(
-                f"Preview updated: {n} samples, duration {duration:.6g}s, warnings {warning_count}.{extra}",
-                is_error=False,
-            )
-        else:
-            self._set_status(f"Preview updated: {n} samples, duration {duration:.6g}s.{extra}", is_error=False)
+            n = len(result["t"])
+            y_duration = float(result["y_boundaries"][-1]) if result["y_boundaries"] else 0.0
+            z_duration = float(result["z_boundaries"][-1]) if result["z_boundaries"] else 0.0
+            duration = max(y_duration, z_duration)
+            warning_count = len(result["report"].issues)
+            extra = f" {auto_fill_message}" if auto_fill_message else ""
+            if warning_count:
+                self._set_status(
+                    f"Preview updated: {n} samples, duration {duration:.6g}s, warnings {warning_count}.{extra}",
+                    is_error=False,
+                )
+            else:
+                self._set_status(f"Preview updated: {n} samples, duration {duration:.6g}s.{extra}", is_error=False)
+        finally:
+            self._record_undo_state_if_changed()
 
     def _suggest_unique_output_path(self, preferred_name: Optional[str] = None, force_default_dir: bool = False) -> Path:
         name = (preferred_name or DEFAULT_OUTPUT_BASENAME).strip()
@@ -1142,6 +1387,7 @@ class RuntimeMixin:
 
         self.project_path = source_path
         self.project_path_var.set(f"Project: {source_path}")
+        self._reset_undo_redo_history()
 
     def _on_save_project(self) -> None:
         if self.project_path is None:

@@ -78,8 +78,13 @@ class TrajectorySynthApp(LayoutMixin, AxisEditorMixin, RuntimeMixin):
         self._suspend_events = False
         self._pending_refresh_id: Optional[str] = None
         self._last_generated: Optional[Dict[str, Any]] = None
+        self._undo_history: List[Dict[str, Any]] = []
+        self._undo_signatures: List[str] = []
+        self._undo_index = -1
+        self._history_replaying = False
 
         self._build_layout()
+        self._bind_undo_redo_shortcuts()
         self._set_csv_view_mode(False)
         self._update_position_plot_split_button_text()
         self._refresh_axis_tree("y")
@@ -87,6 +92,7 @@ class TrajectorySynthApp(LayoutMixin, AxisEditorMixin, RuntimeMixin):
         self._load_selected_item_into_editor("y")
         self._load_selected_item_into_editor("z")
         self._apply_easy_mode_if_needed()
+        self._reset_undo_redo_history()
         self._schedule_refresh()
 
 

@@ -243,7 +243,7 @@ class AxisEditorMixin:
                 transition = transitions[idx]
                 tid = f"t{idx}"
                 mark = "\u2611" if transition.enabled else "\u2610"
-                details = f"{mark} smoothen transition [{transition.eat_away_mode}]"
+                details = f"{mark} smoothen transition [{transition.eat_away_mode}, {transition.smoothing_mode}]"
                 tag = TREE_TAG_TRANSITION_ACTIVE if transition.status == TRANSITION_STATUS_ACTIVE else TREE_TAG_TRANSITION_RESOLVED
                 tree.insert(
                     "",
@@ -387,6 +387,7 @@ class AxisEditorMixin:
         ui["transition_enabled_var"].set(bool(transition.enabled))
         ui["transition_duration_var"].set(f"{transition.duration_s:.6f}")
         ui["transition_eat_var"].set(transition.eat_away_mode)
+        ui["transition_smoothing_var"].set(transition.smoothing_mode)
         ui["transition_info_var"].set(
             f"Boundary {transition_index + 1} - status: {transition.status}, auto_added: {transition.auto_added}"
         )
@@ -395,6 +396,7 @@ class AxisEditorMixin:
         easy = self.edit_mode_var.get() == EDIT_MODE_EASY
         ui["transition_duration_entry"].configure(state="disabled" if easy else "normal")
         ui["transition_eat_combo"].configure(state="disabled" if easy else "readonly")
+        ui["transition_smoothing_combo"].configure(state="disabled" if easy else "readonly")
         ui["transition_check"].configure(state="normal")
 
     def _update_axis_editor_visibility(self, axis: str) -> None:
@@ -487,33 +489,37 @@ class AxisEditorMixin:
             else:
                 frame.grid_remove()
 
-        lock_field = None
+        lock_fields: set[str] = set()
         row_type, row_index = self._editor_row_info(axis)
         if row_type == "section" and 0 <= row_index < len(sections):
             selected_auto_fill = sections[row_index].is_auto_fill
         if not selected_auto_fill and self.edit_mode_var.get() == EDIT_MODE_EASY and row_type == "section" and row_index > 0:
             if secondary_enabled:
                 if secondary_mode == MODE_CONSTANT:
-                    lock_field = "secondary_constant_value"
+                    lock_fields = {"secondary_constant_value"}
                 elif secondary_mode == MODE_RAMP:
-                    lock_field = "secondary_ramp_start"
+                    lock_fields = {"secondary_ramp_start", "secondary_ramp_end"}
                 elif secondary_mode == MODE_CONSTANT_ACCELERATION:
-                    lock_field = "secondary_constant_accel_start"
+                    lock_fields = {"secondary_constant_accel_start", "secondary_constant_accel_initial_speed"}
                 elif secondary_mode == MODE_S_CURVE:
-                    lock_field = "secondary_s_curve_start"
-                elif secondary_mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
-                    lock_field = "secondary_offset"
+                    lock_fields = {"secondary_s_curve_start"}
+                elif secondary_mode in (MODE_SINE, MODE_SWEEP):
+                    lock_fields = {"secondary_offset", "secondary_phase_deg"}
+                elif secondary_mode == MODE_MULTISINE:
+                    lock_fields = {"secondary_offset"}
             else:
                 if mode == MODE_CONSTANT:
-                    lock_field = "constant_value"
+                    lock_fields = {"constant_value"}
                 elif mode == MODE_RAMP:
-                    lock_field = "ramp_start"
+                    lock_fields = {"ramp_start", "ramp_end", "ramp_speed"}
                 elif mode == MODE_CONSTANT_ACCELERATION:
-                    lock_field = "constant_accel_start"
+                    lock_fields = {"constant_accel_start", "constant_accel_initial_speed"}
                 elif mode == MODE_S_CURVE:
-                    lock_field = "s_curve_start"
-                elif mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
-                    lock_field = "offset"
+                    lock_fields = {"s_curve_start"}
+                elif mode in (MODE_SINE, MODE_SWEEP):
+                    lock_fields = {"offset", "phase_deg"}
+                elif mode == MODE_MULTISINE:
+                    lock_fields = {"offset"}
 
         for key, meta in rows.items():
             entry: ttk.Entry = meta["entry"]
@@ -530,7 +536,7 @@ class AxisEditorMixin:
             if selected_auto_fill:
                 state = "readonly"
             else:
-                state = "readonly" if key == lock_field else "normal"
+                state = "readonly" if key in lock_fields else "normal"
             if key in {"sweep_type", "secondary_sweep_type"} and state == "normal":
                 state = "readonly"
             entry.configure(state=state)
@@ -894,10 +900,18 @@ class AxisEditorMixin:
         eat_mode = str(ui["transition_eat_var"].get()).strip().lower()
         if eat_mode not in (EAT_AWAY_LEFT, EAT_AWAY_RIGHT, EAT_AWAY_BOTH):
             raise ValueError(f"{axis_label}: invalid eat-away mode '{eat_mode}'.")
+        smoothing_mode = str(ui["transition_smoothing_var"].get()).strip().lower()
+        if smoothing_mode not in (
+            TRANSITION_SMOOTHING_QUINTIC_C2,
+            TRANSITION_SMOOTHING_CUBIC_C1,
+            TRANSITION_SMOOTHING_LINEAR,
+        ):
+            raise ValueError(f"{axis_label}: invalid smoothing mode '{smoothing_mode}'.")
         return AxisTransitionConfig(
             enabled=bool(ui["transition_enabled_var"].get()),
             duration_s=duration,
             eat_away_mode=eat_mode,
+            smoothing_mode=smoothing_mode,
         )
 
     def _apply_axis_editor_to_model(
@@ -922,6 +936,7 @@ class AxisEditorMixin:
                 current.enabled = edited.enabled
                 current.duration_s = edited.duration_s
                 current.eat_away_mode = edited.eat_away_mode
+                current.smoothing_mode = edited.smoothing_mode
                 if self.edit_mode_var.get() == EDIT_MODE_EXPERT:
                     current.auto_added = False
             else:
@@ -962,23 +977,39 @@ class AxisEditorMixin:
                 ui["secondary_constant_var"].set(f"{params.secondary_constant_value:.6f}")
             elif params.secondary_mode == MODE_RAMP:
                 ui["secondary_ramp_start_var"].set(f"{params.secondary_ramp_start:.6f}")
+                ui["secondary_ramp_end_var"].set(f"{params.secondary_ramp_end:.6f}")
             elif params.secondary_mode == MODE_CONSTANT_ACCELERATION:
                 ui["secondary_constant_accel_start_var"].set(f"{params.secondary_constant_accel_start:.6f}")
+                ui["secondary_constant_accel_initial_speed_var"].set(
+                    f"{params.secondary_constant_accel_initial_speed:.6f}"
+                )
             elif params.secondary_mode == MODE_S_CURVE:
                 ui["secondary_s_curve_start_var"].set(f"{params.secondary_s_curve_start:.6f}")
-            elif params.secondary_mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
+            elif params.secondary_mode in (MODE_SINE, MODE_SWEEP):
+                ui["secondary_offset_var"].set(f"{params.secondary_offset:.6f}")
+                ui["secondary_phase_var"].set(f"{params.secondary_phase_deg:.6f}")
+            elif params.secondary_mode == MODE_MULTISINE:
                 ui["secondary_offset_var"].set(f"{params.secondary_offset:.6f}")
         else:
             if params.mode == MODE_CONSTANT:
                 ui["constant_var"].set(f"{params.constant_value:.6f}")
             elif params.mode == MODE_RAMP:
                 ui["ramp_start_var"].set(f"{params.ramp_start:.6f}")
-                self._apply_ramp_speed_coupling(axis, changed_field="ramp_start")
+                ui["ramp_end_var"].set(f"{params.ramp_end:.6f}")
+                if sections[section_index].duration_s > 0:
+                    ramp_speed = (params.ramp_end - params.ramp_start) / sections[section_index].duration_s
+                else:
+                    ramp_speed = params.ramp_speed_mps
+                ui["ramp_speed_var"].set(f"{ramp_speed:.6f}")
             elif params.mode == MODE_CONSTANT_ACCELERATION:
                 ui["constant_accel_start_var"].set(f"{params.constant_accel_start:.6f}")
+                ui["constant_accel_initial_speed_var"].set(f"{params.constant_accel_initial_speed:.6f}")
             elif params.mode == MODE_S_CURVE:
                 ui["s_curve_start_var"].set(f"{params.s_curve_start:.6f}")
-            elif params.mode in (MODE_SINE, MODE_SWEEP, MODE_MULTISINE):
+            elif params.mode in (MODE_SINE, MODE_SWEEP):
+                ui["offset_var"].set(f"{params.offset:.6f}")
+                ui["phase_var"].set(f"{params.phase_deg:.6f}")
+            elif params.mode == MODE_MULTISINE:
                 ui["offset_var"].set(f"{params.offset:.6f}")
         self._suspend_events = False
 

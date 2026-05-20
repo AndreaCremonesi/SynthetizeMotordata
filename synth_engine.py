@@ -66,6 +66,15 @@ EAT_AWAY_RIGHT = "right"
 EAT_AWAY_BOTH = "both"
 VALID_EAT_AWAY_MODES = (EAT_AWAY_LEFT, EAT_AWAY_RIGHT, EAT_AWAY_BOTH)
 
+TRANSITION_SMOOTHING_QUINTIC_C2 = "quintic_c2"
+TRANSITION_SMOOTHING_CUBIC_C1 = "cubic_c1"
+TRANSITION_SMOOTHING_LINEAR = "linear"
+VALID_TRANSITION_SMOOTHING_MODES = (
+    TRANSITION_SMOOTHING_QUINTIC_C2,
+    TRANSITION_SMOOTHING_CUBIC_C1,
+    TRANSITION_SMOOTHING_LINEAR,
+)
+
 TRANSITION_STATUS_ACTIVE = "active"
 TRANSITION_STATUS_RESOLVED = "resolved"
 VALID_TRANSITION_STATUSES = (TRANSITION_STATUS_ACTIVE, TRANSITION_STATUS_RESOLVED)
@@ -134,6 +143,7 @@ class AxisTransitionConfig:
     enabled: bool = False
     duration_s: float = DEFAULT_TRANSITION_DURATION_S
     eat_away_mode: str = EAT_AWAY_BOTH
+    smoothing_mode: str = TRANSITION_SMOOTHING_QUINTIC_C2
     auto_added: bool = False
     status: str = TRANSITION_STATUS_RESOLVED
 
@@ -492,6 +502,12 @@ def _validate_axis_transitions(axis_label: str, pipeline: AxisPipeline) -> None:
             raise ValueError(
                 f"{axis_label} transition {idx}: invalid eat-away mode '{transition.eat_away_mode}' (allowed: {allowed})."
             )
+        if transition.smoothing_mode not in VALID_TRANSITION_SMOOTHING_MODES:
+            allowed = ", ".join(VALID_TRANSITION_SMOOTHING_MODES)
+            raise ValueError(
+                f"{axis_label} transition {idx}: invalid smoothing mode "
+                f"'{transition.smoothing_mode}' (allowed: {allowed})."
+            )
         if transition.status not in VALID_TRANSITION_STATUSES:
             transition.status = TRANSITION_STATUS_RESOLVED
 
@@ -723,6 +739,217 @@ def _waveform_start_value(
     raise ValueError(f"Unsupported mode: {mode}")
 
 
+def _waveform_start_velocity(
+    mode: str,
+    duration_s: float,
+    sample_rate_hz: float,
+    amplitude: float,
+    offset: float,
+    phase_deg: float,
+    frequency_hz: float,
+    sweep_type: str,
+    sweep_start_hz: float,
+    sweep_end_hz: float,
+    sweep_accel_star: float,
+    s_curve_start: float,
+    s_curve_end: float,
+    s_curve_max_speed: float,
+    s_curve_max_acceleration: float,
+    s_curve_max_jerk: float,
+    ramp_start: float,
+    ramp_end: float,
+    constant_accel_start: float,
+    constant_accel_initial_speed: float,
+    constant_accel_acceleration: float,
+    constant_value: float,
+    multisine_components: str,
+) -> float:
+    if sample_rate_hz <= 0:
+        return 0.0
+    dt = 1.0 / sample_rate_hz
+    t_local = np.array([0.0, dt], dtype=float)
+    values = _generate_waveform(
+        t_local=t_local,
+        duration_s=duration_s,
+        mode=mode,
+        amplitude=amplitude,
+        offset=offset,
+        phase_deg=phase_deg,
+        frequency_hz=frequency_hz,
+        sweep_type=sweep_type,
+        sweep_start_hz=sweep_start_hz,
+        sweep_end_hz=sweep_end_hz,
+        sweep_accel_star=sweep_accel_star,
+        s_curve_start=s_curve_start,
+        s_curve_end=s_curve_end,
+        s_curve_max_speed=s_curve_max_speed,
+        s_curve_max_acceleration=s_curve_max_acceleration,
+        s_curve_max_jerk=s_curve_max_jerk,
+        ramp_start=ramp_start,
+        ramp_end=ramp_end,
+        constant_accel_start=constant_accel_start,
+        constant_accel_initial_speed=constant_accel_initial_speed,
+        constant_accel_acceleration=constant_accel_acceleration,
+        constant_value=constant_value,
+        multisine_components=multisine_components,
+    )
+    return float((values[1] - values[0]) / dt)
+
+
+def _primary_start_value(params: AxisSectionParams) -> float:
+    return _waveform_start_value(
+        mode=params.mode,
+        amplitude=params.amplitude,
+        offset=params.offset,
+        phase_deg=params.phase_deg,
+        sweep_start_hz=params.sweep_start_hz,
+        sweep_accel_star=params.sweep_accel_star,
+        s_curve_start=params.s_curve_start,
+        ramp_start=params.ramp_start,
+        constant_accel_start=params.constant_accel_start,
+        constant_value=params.constant_value,
+        multisine_components=params.multisine_components,
+    )
+
+
+def _secondary_start_value(params: AxisSectionParams) -> float:
+    return _waveform_start_value(
+        mode=params.secondary_mode,
+        amplitude=params.secondary_amplitude,
+        offset=params.secondary_offset,
+        phase_deg=params.secondary_phase_deg,
+        sweep_start_hz=params.secondary_sweep_start_hz,
+        sweep_accel_star=params.secondary_sweep_accel_star,
+        s_curve_start=params.secondary_s_curve_start,
+        ramp_start=params.secondary_ramp_start,
+        constant_accel_start=params.secondary_constant_accel_start,
+        constant_value=params.secondary_constant_value,
+        multisine_components=params.secondary_multisine_components,
+    )
+
+
+def _primary_start_velocity(params: AxisSectionParams, duration_s: float, sample_rate_hz: float) -> float:
+    return _waveform_start_velocity(
+        mode=params.mode,
+        duration_s=duration_s,
+        sample_rate_hz=sample_rate_hz,
+        amplitude=params.amplitude,
+        offset=params.offset,
+        phase_deg=params.phase_deg,
+        frequency_hz=params.frequency_hz,
+        sweep_type=params.sweep_type,
+        sweep_start_hz=params.sweep_start_hz,
+        sweep_end_hz=params.sweep_end_hz,
+        sweep_accel_star=params.sweep_accel_star,
+        s_curve_start=params.s_curve_start,
+        s_curve_end=params.s_curve_end,
+        s_curve_max_speed=params.s_curve_max_speed,
+        s_curve_max_acceleration=params.s_curve_max_acceleration,
+        s_curve_max_jerk=params.s_curve_max_jerk,
+        ramp_start=params.ramp_start,
+        ramp_end=params.ramp_end,
+        constant_accel_start=params.constant_accel_start,
+        constant_accel_initial_speed=params.constant_accel_initial_speed,
+        constant_accel_acceleration=params.constant_accel_acceleration,
+        constant_value=params.constant_value,
+        multisine_components=params.multisine_components,
+    )
+
+
+def _secondary_start_velocity(params: AxisSectionParams, duration_s: float, sample_rate_hz: float) -> float:
+    return _waveform_start_velocity(
+        mode=params.secondary_mode,
+        duration_s=duration_s,
+        sample_rate_hz=sample_rate_hz,
+        amplitude=params.secondary_amplitude,
+        offset=params.secondary_offset,
+        phase_deg=params.secondary_phase_deg,
+        frequency_hz=params.secondary_frequency_hz,
+        sweep_type=params.secondary_sweep_type,
+        sweep_start_hz=params.secondary_sweep_start_hz,
+        sweep_end_hz=params.secondary_sweep_end_hz,
+        sweep_accel_star=params.secondary_sweep_accel_star,
+        s_curve_start=params.secondary_s_curve_start,
+        s_curve_end=params.secondary_s_curve_end,
+        s_curve_max_speed=params.secondary_s_curve_max_speed,
+        s_curve_max_acceleration=params.secondary_s_curve_max_acceleration,
+        s_curve_max_jerk=params.secondary_s_curve_max_jerk,
+        ramp_start=params.secondary_ramp_start,
+        ramp_end=params.secondary_ramp_end,
+        constant_accel_start=params.secondary_constant_accel_start,
+        constant_accel_initial_speed=params.secondary_constant_accel_initial_speed,
+        constant_accel_acceleration=params.secondary_constant_accel_acceleration,
+        constant_value=params.secondary_constant_value,
+        multisine_components=params.secondary_multisine_components,
+    )
+
+
+def _normalized_angle_distance(angle_a: float, angle_b: float) -> float:
+    return abs((angle_a - angle_b + math.pi) % (2.0 * math.pi) - math.pi)
+
+
+def _phase_for_discrete_start_velocity(
+    mode: str,
+    duration_s: float,
+    sample_rate_hz: float,
+    target_velocity: float,
+    current_phase_deg: float,
+    amplitude: float,
+    frequency_hz: float,
+    sweep_type: str,
+    sweep_start_hz: float,
+    sweep_end_hz: float,
+    sweep_accel_star: float,
+) -> Optional[float]:
+    if sample_rate_hz <= 0:
+        return None
+
+    dt = 1.0 / sample_rate_hz
+    t_local = np.array([0.0, dt], dtype=float)
+
+    def phase_delta(phase_deg: float) -> float:
+        values = _generate_waveform(
+            t_local=t_local,
+            duration_s=duration_s,
+            mode=mode,
+            amplitude=amplitude,
+            offset=0.0,
+            phase_deg=phase_deg,
+            frequency_hz=frequency_hz,
+            sweep_type=sweep_type,
+            sweep_start_hz=sweep_start_hz,
+            sweep_end_hz=sweep_end_hz,
+            sweep_accel_star=sweep_accel_star,
+            s_curve_start=0.0,
+            s_curve_end=0.0,
+            s_curve_max_speed=1.0,
+            s_curve_max_acceleration=1.0,
+            s_curve_max_jerk=1.0,
+            ramp_start=0.0,
+            ramp_end=0.0,
+            constant_accel_start=0.0,
+            constant_accel_initial_speed=0.0,
+            constant_accel_acceleration=0.0,
+            constant_value=0.0,
+            multisine_components=DEFAULT_MULTISINE_COMPONENTS,
+        )
+        return float(values[1] - values[0])
+
+    b = phase_delta(0.0)
+    a = phase_delta(90.0)
+    radius = math.hypot(a, b)
+    if radius <= 1e-15:
+        return None
+
+    requested_delta = max(-radius, min(radius, target_velocity * dt))
+    beta = math.atan2(b, a)
+    base = math.asin(requested_delta / radius)
+    candidates = (base - beta, math.pi - base - beta)
+    current_phase_rad = math.radians(current_phase_deg)
+    selected = min(candidates, key=lambda candidate: _normalized_angle_distance(candidate, current_phase_rad))
+    return math.degrees(selected)
+
+
 def _endpoint_derivatives(values: np.ndarray, dt: float, at_start: bool) -> Tuple[float, float]:
     n = len(values)
     if n <= 1:
@@ -787,6 +1014,76 @@ def _c2_quintic_blend(
 
     t = dt * np.arange(1, n_samples + 1, dtype=float)
     return c0 + c1 * t + c2 * t**2 + c3 * t**3 + c4 * t**4 + c5 * t**5
+
+
+def _c1_cubic_blend(
+    start_value: float,
+    start_velocity: float,
+    end_value: float,
+    end_velocity: float,
+    n_samples: int,
+    dt: float,
+) -> np.ndarray:
+    if n_samples <= 0:
+        return np.array([], dtype=float)
+
+    total_time = (n_samples + 1) * dt
+    u = (np.arange(n_samples, dtype=float) + 1.0) / (n_samples + 1.0)
+    h00 = 2.0 * u**3 - 3.0 * u**2 + 1.0
+    h10 = u**3 - 2.0 * u**2 + u
+    h01 = -2.0 * u**3 + 3.0 * u**2
+    h11 = u**3 - u**2
+    return (
+        h00 * start_value
+        + h10 * total_time * start_velocity
+        + h01 * end_value
+        + h11 * total_time * end_velocity
+    )
+
+
+def _linear_blend(start_value: float, end_value: float, n_samples: int) -> np.ndarray:
+    if n_samples <= 0:
+        return np.array([], dtype=float)
+
+    u = (np.arange(n_samples, dtype=float) + 1.0) / (n_samples + 1.0)
+    return start_value + (end_value - start_value) * u
+
+
+def _transition_blend(
+    smoothing_mode: str,
+    start_value: float,
+    start_velocity: float,
+    start_acceleration: float,
+    end_value: float,
+    end_velocity: float,
+    end_acceleration: float,
+    n_samples: int,
+    dt: float,
+) -> np.ndarray:
+    if smoothing_mode == TRANSITION_SMOOTHING_QUINTIC_C2:
+        return _c2_quintic_blend(
+            start_value=start_value,
+            start_velocity=start_velocity,
+            start_acceleration=start_acceleration,
+            end_value=end_value,
+            end_velocity=end_velocity,
+            end_acceleration=end_acceleration,
+            n_samples=n_samples,
+            dt=dt,
+        )
+    if smoothing_mode == TRANSITION_SMOOTHING_CUBIC_C1:
+        return _c1_cubic_blend(
+            start_value=start_value,
+            start_velocity=start_velocity,
+            end_value=end_value,
+            end_velocity=end_velocity,
+            n_samples=n_samples,
+            dt=dt,
+        )
+    if smoothing_mode == TRANSITION_SMOOTHING_LINEAR:
+        return _linear_blend(start_value, end_value, n_samples)
+
+    raise ValueError(f"Unsupported transition smoothing mode: {smoothing_mode}")
 
 
 def _allocate_removals(
@@ -920,7 +1217,8 @@ def generate_axis_timeline(
         end_value = float(right_kept[0])
         start_velocity, start_acceleration = _endpoint_derivatives(left_kept, dt, at_start=False)
         end_velocity, end_acceleration = _endpoint_derivatives(right_kept, dt, at_start=True)
-        blend = _c2_quintic_blend(
+        blend = _transition_blend(
+            smoothing_mode=transition.smoothing_mode,
             start_value=start_value,
             start_velocity=start_velocity,
             start_acceleration=start_acceleration,
@@ -981,10 +1279,129 @@ def generate_trajectory(recipe: TrajectoryRecipe) -> Tuple[np.ndarray, np.ndarra
 
 
 def _section_end_value(section: AxisMotionSection, sample_rate_hz: float) -> float:
+    value, _velocity = _section_end_state(section, sample_rate_hz)
+    return value
+
+
+def _section_end_state(section: AxisMotionSection, sample_rate_hz: float) -> Tuple[float, float]:
     n_samples = _section_sample_count(section.duration_s, sample_rate_hz)
     t_local = np.arange(n_samples, dtype=float) / sample_rate_hz
     values = _generate_axis_section(t_local, section.duration_s, section.params)
-    return float(values[-1])
+    dt = 1.0 / sample_rate_hz
+    velocity, _acceleration = _endpoint_derivatives(values, dt, at_start=False)
+    boundary_value = float(values[-1] + velocity * dt)
+    return boundary_value, velocity
+
+
+def _set_primary_start_value(params: AxisSectionParams, target_start: float) -> None:
+    if params.mode == MODE_CONSTANT:
+        params.constant_value = target_start
+    elif params.mode == MODE_RAMP:
+        params.ramp_start = target_start
+    elif params.mode == MODE_CONSTANT_ACCELERATION:
+        params.constant_accel_start = target_start
+    elif params.mode == MODE_SINE:
+        params.offset = target_start - (params.amplitude * math.sin(math.radians(params.phase_deg)))
+    elif params.mode == MODE_SWEEP:
+        primary_start_wave = _sweep_amplitude_at_frequency(
+            params.amplitude,
+            params.sweep_accel_star,
+            params.sweep_start_hz,
+        ) * math.sin(math.radians(params.phase_deg))
+        params.offset = target_start - primary_start_wave
+    elif params.mode == MODE_S_CURVE:
+        params.s_curve_start = target_start
+    elif params.mode == MODE_MULTISINE:
+        components = _parse_multisine_components(params.multisine_components)
+        base_at_t0 = sum(amplitude * math.sin(math.radians(phase_deg)) for amplitude, _f, phase_deg in components)
+        params.offset = target_start - base_at_t0
+
+
+def _set_secondary_start_value(params: AxisSectionParams, target_start: float) -> None:
+    if params.secondary_mode == MODE_CONSTANT:
+        params.secondary_constant_value = target_start
+    elif params.secondary_mode == MODE_RAMP:
+        params.secondary_ramp_start = target_start
+    elif params.secondary_mode == MODE_CONSTANT_ACCELERATION:
+        params.secondary_constant_accel_start = target_start
+    elif params.secondary_mode == MODE_SINE:
+        params.secondary_offset = target_start - (
+            params.secondary_amplitude * math.sin(math.radians(params.secondary_phase_deg))
+        )
+    elif params.secondary_mode == MODE_SWEEP:
+        secondary_start_wave = _sweep_amplitude_at_frequency(
+            params.secondary_amplitude,
+            params.secondary_sweep_accel_star,
+            params.secondary_sweep_start_hz,
+        ) * math.sin(math.radians(params.secondary_phase_deg))
+        params.secondary_offset = target_start - secondary_start_wave
+    elif params.secondary_mode == MODE_S_CURVE:
+        params.secondary_s_curve_start = target_start
+    elif params.secondary_mode == MODE_MULTISINE:
+        components = _parse_multisine_components(params.secondary_multisine_components)
+        base_at_t0 = sum(amplitude * math.sin(math.radians(phase_deg)) for amplitude, _f, phase_deg in components)
+        params.secondary_offset = target_start - base_at_t0
+
+
+def _match_primary_start_velocity(
+    params: AxisSectionParams,
+    duration_s: float,
+    sample_rate_hz: float,
+    target_velocity: float,
+) -> None:
+    if params.mode == MODE_RAMP:
+        params.ramp_end = params.ramp_start + target_velocity * duration_s
+        params.ramp_speed_mps = target_velocity
+    elif params.mode == MODE_CONSTANT_ACCELERATION:
+        dt = 1.0 / sample_rate_hz
+        params.constant_accel_initial_speed = target_velocity - 0.5 * params.constant_accel_acceleration * dt
+    elif params.mode in (MODE_SINE, MODE_SWEEP):
+        phase_deg = _phase_for_discrete_start_velocity(
+            mode=params.mode,
+            duration_s=duration_s,
+            sample_rate_hz=sample_rate_hz,
+            target_velocity=target_velocity,
+            current_phase_deg=params.phase_deg,
+            amplitude=params.amplitude,
+            frequency_hz=params.frequency_hz,
+            sweep_type=params.sweep_type,
+            sweep_start_hz=params.sweep_start_hz,
+            sweep_end_hz=params.sweep_end_hz,
+            sweep_accel_star=params.sweep_accel_star,
+        )
+        if phase_deg is not None:
+            params.phase_deg = phase_deg
+
+
+def _match_secondary_start_velocity(
+    params: AxisSectionParams,
+    duration_s: float,
+    sample_rate_hz: float,
+    target_velocity: float,
+) -> None:
+    if params.secondary_mode == MODE_RAMP:
+        params.secondary_ramp_end = params.secondary_ramp_start + target_velocity * duration_s
+    elif params.secondary_mode == MODE_CONSTANT_ACCELERATION:
+        dt = 1.0 / sample_rate_hz
+        params.secondary_constant_accel_initial_speed = (
+            target_velocity - 0.5 * params.secondary_constant_accel_acceleration * dt
+        )
+    elif params.secondary_mode in (MODE_SINE, MODE_SWEEP):
+        phase_deg = _phase_for_discrete_start_velocity(
+            mode=params.secondary_mode,
+            duration_s=duration_s,
+            sample_rate_hz=sample_rate_hz,
+            target_velocity=target_velocity,
+            current_phase_deg=params.secondary_phase_deg,
+            amplitude=params.secondary_amplitude,
+            frequency_hz=params.secondary_frequency_hz,
+            sweep_type=params.secondary_sweep_type,
+            sweep_start_hz=params.secondary_sweep_start_hz,
+            sweep_end_hz=params.secondary_sweep_end_hz,
+            sweep_accel_star=params.secondary_sweep_accel_star,
+        )
+        if phase_deg is not None:
+            params.secondary_phase_deg = phase_deg
 
 
 def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz: float) -> None:
@@ -993,72 +1410,23 @@ def apply_easy_mode_continuity(sections: List[AxisMotionSection], sample_rate_hz
 
     _validate_axis_sections("Axis", sections, sample_rate_hz)
     for idx in range(1, len(sections)):
-        prev_end = _section_end_value(sections[idx - 1], sample_rate_hz)
+        prev_end, prev_velocity = _section_end_state(sections[idx - 1], sample_rate_hz)
+        section = sections[idx]
         params = sections[idx].params
-        primary_start = _waveform_start_value(
-            mode=params.mode,
-            amplitude=params.amplitude,
-            offset=params.offset,
-            phase_deg=params.phase_deg,
-            sweep_start_hz=params.sweep_start_hz,
-            sweep_accel_star=params.sweep_accel_star,
-            s_curve_start=params.s_curve_start,
-            ramp_start=params.ramp_start,
-            constant_accel_start=params.constant_accel_start,
-            constant_value=params.constant_value,
-            multisine_components=params.multisine_components,
-        )
         if params.secondary_enabled:
+            primary_start = _primary_start_value(params)
+            primary_velocity = _primary_start_velocity(params, section.duration_s, sample_rate_hz)
             target_secondary_start = prev_end - primary_start
-            if params.secondary_mode == MODE_CONSTANT:
-                params.secondary_constant_value = target_secondary_start
-            elif params.secondary_mode == MODE_RAMP:
-                params.secondary_ramp_start = target_secondary_start
-            elif params.secondary_mode == MODE_CONSTANT_ACCELERATION:
-                params.secondary_constant_accel_start = target_secondary_start
-            elif params.secondary_mode == MODE_SINE:
-                params.secondary_offset = target_secondary_start - (
-                    params.secondary_amplitude * math.sin(math.radians(params.secondary_phase_deg))
-                )
-            elif params.secondary_mode == MODE_SWEEP:
-                secondary_start_wave = _sweep_amplitude_at_frequency(
-                    params.secondary_amplitude,
-                    params.secondary_sweep_accel_star,
-                    params.secondary_sweep_start_hz,
-                ) * math.sin(math.radians(params.secondary_phase_deg))
-                params.secondary_offset = target_secondary_start - secondary_start_wave
-            elif params.secondary_mode == MODE_S_CURVE:
-                params.secondary_s_curve_start = target_secondary_start
-            elif params.secondary_mode == MODE_MULTISINE:
-                components = _parse_multisine_components(params.secondary_multisine_components)
-                base_at_t0 = sum(
-                    amplitude * math.sin(math.radians(phase_deg)) for amplitude, _f, phase_deg in components
-                )
-                params.secondary_offset = target_secondary_start - base_at_t0
+            target_secondary_velocity = prev_velocity - primary_velocity
+            _set_secondary_start_value(params, target_secondary_start)
+            _match_secondary_start_velocity(params, section.duration_s, sample_rate_hz, target_secondary_velocity)
+            _set_secondary_start_value(params, target_secondary_start)
             continue
 
         target_primary_start = prev_end
-        if params.mode == MODE_CONSTANT:
-            params.constant_value = target_primary_start
-        elif params.mode == MODE_RAMP:
-            params.ramp_start = target_primary_start
-        elif params.mode == MODE_CONSTANT_ACCELERATION:
-            params.constant_accel_start = target_primary_start
-        elif params.mode == MODE_SINE:
-            params.offset = target_primary_start - (params.amplitude * math.sin(math.radians(params.phase_deg)))
-        elif params.mode == MODE_SWEEP:
-            primary_start_wave = _sweep_amplitude_at_frequency(
-                params.amplitude,
-                params.sweep_accel_star,
-                params.sweep_start_hz,
-            ) * math.sin(math.radians(params.phase_deg))
-            params.offset = target_primary_start - primary_start_wave
-        elif params.mode == MODE_S_CURVE:
-            params.s_curve_start = target_primary_start
-        elif params.mode == MODE_MULTISINE:
-            components = _parse_multisine_components(params.multisine_components)
-            base_at_t0 = sum(amplitude * math.sin(math.radians(phase_deg)) for amplitude, _f, phase_deg in components)
-            params.offset = target_primary_start - base_at_t0
+        _set_primary_start_value(params, target_primary_start)
+        _match_primary_start_velocity(params, section.duration_s, sample_rate_hz, prev_velocity)
+        _set_primary_start_value(params, target_primary_start)
 
 
 def compute_velocity_acceleration(

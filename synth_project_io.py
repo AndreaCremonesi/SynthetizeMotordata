@@ -287,16 +287,22 @@ def _transition_to_dict(transition: AxisTransitionConfig) -> Dict[str, Any]:
         "enabled": transition.enabled,
         "duration_s": transition.duration_s,
         "eat_away_mode": transition.eat_away_mode,
+        "smoothing_mode": transition.smoothing_mode,
         "auto_added": transition.auto_added,
         "status": transition.status,
     }
 
 
 def _transition_from_dict(data: Mapping[str, Any], prefix: str) -> AxisTransitionConfig:
+    defaults = AxisTransitionConfig()
     return AxisTransitionConfig(
         enabled=_as_bool(f"{prefix}.enabled", data.get("enabled")),
         duration_s=_as_float(f"{prefix}.duration_s", data.get("duration_s")),
         eat_away_mode=_as_str(f"{prefix}.eat_away_mode", data.get("eat_away_mode")),
+        smoothing_mode=_as_str(
+            f"{prefix}.smoothing_mode",
+            data.get("smoothing_mode", defaults.smoothing_mode),
+        ),
         auto_added=_as_bool(f"{prefix}.auto_added", data.get("auto_added")),
         status=_as_str(f"{prefix}.status", data.get("status")),
     )

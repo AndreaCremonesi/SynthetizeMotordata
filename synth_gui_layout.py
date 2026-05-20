@@ -686,6 +686,7 @@ class LayoutMixin:
         transition_enabled_var = tk.BooleanVar(value=False)
         transition_duration_var = tk.StringVar(value=f"{DEFAULT_TRANSITION_DURATION_S:.3f}")
         transition_eat_var = tk.StringVar(value=EAT_AWAY_BOTH)
+        transition_smoothing_var = tk.StringVar(value=TRANSITION_SMOOTHING_QUINTIC_C2)
         transition_info_var = tk.StringVar(value="")
 
         check = ttk.Checkbutton(
@@ -718,13 +719,31 @@ class LayoutMixin:
         eat_combo.grid(row=0, column=1, sticky="ew")
         eat_combo.bind("<<ComboboxSelected>>", lambda _event, a=axis: self._on_transition_editor_changed(a))
 
+        smooth_row = ttk.Frame(transition_editor)
+        smooth_row.grid(row=3, column=0, sticky="ew", pady=1)
+        smooth_row.columnconfigure(1, weight=1)
+        ttk.Label(smooth_row, text="Smoothing mode").grid(row=0, column=0, sticky="w", padx=(0, 6))
+        smooth_combo = ttk.Combobox(
+            smooth_row,
+            state="readonly",
+            values=[
+                TRANSITION_SMOOTHING_QUINTIC_C2,
+                TRANSITION_SMOOTHING_CUBIC_C1,
+                TRANSITION_SMOOTHING_LINEAR,
+            ],
+            textvariable=transition_smoothing_var,
+            width=12,
+        )
+        smooth_combo.grid(row=0, column=1, sticky="ew")
+        smooth_combo.bind("<<ComboboxSelected>>", lambda _event, a=axis: self._on_transition_editor_changed(a))
+
         info_label = ttk.Label(
             transition_editor,
             textvariable=transition_info_var,
             wraplength=460,
             justify="left",
         )
-        info_label.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+        info_label.grid(row=4, column=0, sticky="ew", pady=(8, 0))
 
         self.axis_ui[axis] = {
             "axis_pane": axis_pane,
@@ -801,10 +820,12 @@ class LayoutMixin:
             "transition_enabled_var": transition_enabled_var,
             "transition_duration_var": transition_duration_var,
             "transition_eat_var": transition_eat_var,
+            "transition_smoothing_var": transition_smoothing_var,
             "transition_info_var": transition_info_var,
             "transition_check": check,
             "transition_duration_entry": dur_entry,
             "transition_eat_combo": eat_combo,
+            "transition_smoothing_combo": smooth_combo,
             "selected_type": "section",
             "selected_index": 0,
         }

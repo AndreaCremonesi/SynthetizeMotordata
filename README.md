@@ -26,7 +26,7 @@ The app previews position/velocity/acceleration/path, validates limits, supports
 - Transition rows between section boundaries
   - Warning-driven boundary status (`active`/`resolved`)
   - Optional smoothing (`smoothen transition`) with eat-away modes (`left`, `right`, `both`)
-  - Quintic C2 blending to match value, velocity, and acceleration at both ends
+  - Smoothing modes: `quintic_c2` (value/speed/acceleration), `cubic_c1` (value/speed), and `linear` (value)
 - Pipeline section copy/paste
   - Multi-select sections with Ctrl+Click in a pipeline tree
   - Copy/paste within the same axis or across Y/Z axes
@@ -120,7 +120,7 @@ source .venv/bin/activate
 ## Easy vs Expert
 
 - Easy mode
-  - Section continuity is auto-applied across boundaries (value continuity)
+  - Section continuity is auto-applied across boundaries (value and speed continuity where the waveform can support it)
   - Transition advanced fields are locked, while enable/disable remains available
   - Active boundary jumps can auto-enable default transitions
 - Expert mode
