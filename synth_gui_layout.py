@@ -847,7 +847,7 @@ class LayoutMixin:
 
         for tab in (tab_dyn, tab_path):
             tab.columnconfigure(0, weight=1)
-            tab.rowconfigure(0, weight=1)
+            tab.rowconfigure(1, weight=1)
         tab_pos.columnconfigure(0, weight=1)
         tab_pos.rowconfigure(1, weight=1)
 
@@ -866,16 +866,25 @@ class LayoutMixin:
         self.ax_pos_y = None
         self.ax_pos_z = None
         self.canvas_pos = FigureCanvasTkAgg(self.fig_pos, master=tab_pos)
+        self.toolbar_pos = NavigationToolbar2Tk(self.canvas_pos, pos_controls, pack_toolbar=False)
+        self.toolbar_pos.update()
+        self.toolbar_pos.grid(row=0, column=0, sticky="w")
         self.canvas_pos.get_tk_widget().grid(row=1, column=0, sticky="nsew")
 
         self.fig_dyn = Figure(figsize=(11.5, 8.0), dpi=100)
         self.ax_vel = self.fig_dyn.add_subplot(211)
         self.ax_acc = self.fig_dyn.add_subplot(212)
         self.canvas_dyn = FigureCanvasTkAgg(self.fig_dyn, master=tab_dyn)
-        self.canvas_dyn.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        self.toolbar_dyn = NavigationToolbar2Tk(self.canvas_dyn, tab_dyn, pack_toolbar=False)
+        self.toolbar_dyn.update()
+        self.toolbar_dyn.grid(row=0, column=0, sticky="ew")
+        self.canvas_dyn.get_tk_widget().grid(row=1, column=0, sticky="nsew")
 
         self.fig_path = Figure(figsize=(11.5, 8.0), dpi=100)
         self.ax_path = self.fig_path.add_subplot(111)
         self.canvas_path = FigureCanvasTkAgg(self.fig_path, master=tab_path)
-        self.canvas_path.get_tk_widget().grid(row=0, column=0, sticky="nsew")
+        self.toolbar_path = NavigationToolbar2Tk(self.canvas_path, tab_path, pack_toolbar=False)
+        self.toolbar_path.update()
+        self.toolbar_path.grid(row=0, column=0, sticky="ew")
+        self.canvas_path.get_tk_widget().grid(row=1, column=0, sticky="nsew")
 

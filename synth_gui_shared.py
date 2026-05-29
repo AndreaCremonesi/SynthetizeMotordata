@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 import tkinter as tk
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 from tkinter import filedialog, messagebox, ttk
 
@@ -123,6 +123,7 @@ __all__ = [
     "EDIT_MODE_EXPERT",
     "Figure",
     "FigureCanvasTkAgg",
+    "NavigationToolbar2Tk",
     "LimitsConfig",
     "List",
     "MODE_CONSTANT",
